@@ -6,7 +6,7 @@ Add Chapter 2 below, starting on a new page after Chapter 1. Underline the words
 
 ### 2.1 Entity-Relationship (ER) Diagram
 
-The design has eight entities. A **Department** offers courses and employs instructors, and every
+The design has seven entities. A **Department** offers courses and employs instructors, and every
 student belongs to one department. A **Course** (for example CS302, Database Systems) is the subject;
 a **Section** is one actual class of that course with its own instructor, room and seat capacity, so
 one course can have several sections. Each section meets at one or more weekly **Meeting** times.
@@ -27,17 +27,16 @@ sections but is deliberately not tied to them by foreign keys, so its history su
 The ER diagram was mapped to relations using the standard rules of the relational model [6]. Strong
 entities became tables with a surrogate primary key. Each one-to-many relationship became a foreign
 key on the "many" side. Each many-to-many relationship became its own table whose key combines the
-two participating keys. The weekly meeting times, a multi-valued attribute of a section, became a
-separate table.
+two participating keys. Meeting times were modelled as an entity of their own rather than as an attribute of a section,
+because a section meets several times a week.
 
 **Table 2.1: Mapping of ER constructs to relations**
 
 | ER construct | Type | Relation(s) |
 |---|---|---|
-| Department, Student, Instructor, Course, Section | Strong entities | `departments`, `students`, `instructors`, `courses`, `sections` |
+| Department, Student, Instructor, Course, Section, Meeting | Strong entities | `departments`, `students`, `instructors`, `courses`, `sections`, `section_meetings` |
 | Department–Student, Department–Instructor, Department–Course | 1 : N | foreign key `dept_id` in `students`, `instructors`, `courses` |
-| Course–Section, Instructor–Section | 1 : N | foreign keys `course_id`, `instructor_id` in `sections` |
-| Section meets at times | Multi-valued attribute | `section_meetings(section_id, day, start_time, end_time)` |
+| Course–Section, Instructor–Section, Section–Meeting | 1 : N | foreign keys `course_id`, `instructor_id` in `sections`; `section_id` in `section_meetings` |
 | Student enrolls in Section | M : N with attribute | `enrollments(student_id, section_id, enrolled_at)` |
 | Student waits for Section | M : N with attribute | `waitlist(student_id, section_id, requested_at)` |
 | Student completed Course | M : N with attribute | `completed_courses(student_id, course_id, grade)` |

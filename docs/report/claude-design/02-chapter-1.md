@@ -45,7 +45,6 @@ interface on top that only calls the database's procedures.
 | Flask | 3.1.0 [3] | Web framework (routes and JSON API) |
 | mysql-connector-python | 9.1.0 [4] | Python driver for MySQL |
 | Bootstrap | 5.3.3 [5] | Page layout and styling |
-| MySQL Workbench | 8.0 | Schema diagram |
 | Git and GitHub | – | Version control and collaboration |
 | Operating systems | Ubuntu 24.04 on WSL2 (Windows 11); Windows | Development machines of the two members |
 
