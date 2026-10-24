@@ -43,6 +43,64 @@ JOIN courses c          ON c.course_id = s.course_id
 JOIN instructors i      ON i.instructor_id = s.instructor_id
 JOIN section_meetings m ON m.section_id = s.section_id;
 
+-- Analytics ---------------------------------------------------------------------------------------
+
+-- Demand per course (enrolled + waitlisted over all its sections), ranked within its department.
+-- A CTE sums the sections, then RANK() OVER (PARTITION BY ...) ranks each department separately.
+CREATE VIEW v_course_demand AS
+WITH course_totals AS (
+  SELECT course_id,
+         SUM(capacity)     AS capacity,
+         SUM(enrolled)     AS enrolled,
+         SUM(waitlist_len) AS waitlisted
+  FROM v_section_seats
+  GROUP BY course_id
+)
+SELECT d.name  AS dept_name,
+       c.course_id,
+       c.code  AS course_code,
+       c.title AS course_title,
+       t.capacity,
+       t.enrolled,
+       t.waitlisted,
+       t.enrolled + t.waitlisted                         AS demand,
+       ROUND(100 * (t.enrolled + t.waitlisted) / t.capacity, 1) AS demand_pct,
+       RANK() OVER (PARTITION BY c.dept_id ORDER BY t.enrolled + t.waitlisted DESC) AS dept_rank
+FROM course_totals t
+JOIN courses c     ON c.course_id = t.course_id
+JOIN departments d ON d.dept_id = c.dept_id;
+
+-- Courses where demand is higher than all their seats combined: candidates for a new section.
+CREATE VIEW v_oversubscribed_courses AS
+SELECT course_id,
+       course_code,
+       course_title,
+       SUM(capacity)                     AS capacity,
+       SUM(enrolled) + SUM(waitlist_len) AS demand
+FROM v_section_seats
+GROUP BY course_id, course_code, course_title
+HAVING demand > capacity;
+
+-- Registration activity per day from the audit log, with a running total of enrolled seats.
+-- The CTE groups by day; SUM() OVER (ORDER BY ...) then adds each day to all the days before it.
+CREATE VIEW v_daily_activity AS
+WITH daily AS (
+  SELECT DATE(logged_at)                    AS activity_date,
+         SUM(action IN ('ENROLL', 'PROMOTE')) AS enrolls,
+         SUM(action = 'DROP')                 AS drops,
+         SUM(action = 'WAITLIST')             AS waitlists,
+         SUM(action = 'REJECT')               AS rejects
+  FROM audit_log
+  GROUP BY DATE(logged_at)
+)
+SELECT activity_date,
+       enrolls,
+       drops,
+       waitlists,
+       rejects,
+       SUM(enrolls - drops) OVER (ORDER BY activity_date) AS total_enrolled
+FROM daily;
+
 -- Live InnoDB locks on this database, for the Race Arena lock monitor. thread_id is the
 -- connection id (SELECT CONNECTION_ID()); blocked_by_thread_id is set while a lock is WAITING.
 -- Uses performance_schema only: it honours the view definer's privileges, so readers of the view

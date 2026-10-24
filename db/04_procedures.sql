@@ -15,15 +15,11 @@ CREATE PROCEDURE sp_register(
   OUT p_msg        VARCHAR(255)
 )
 BEGIN
-  DECLARE l_capacity    INT;
-  DECLARE l_course_id   INT;
-  DECLARE l_credits     INT;
-  DECLARE l_max_credits INT;
-  DECLARE l_enrolled    INT;
-  DECLARE l_label       VARCHAR(20);
-  DECLARE l_missing     VARCHAR(255);
-  DECLARE l_reject      VARCHAR(255);
-  DECLARE l_error       VARCHAR(255);
+  DECLARE l_capacity INT;
+  DECLARE l_enrolled INT;
+  DECLARE l_label    VARCHAR(20);
+  DECLARE l_reject   VARCHAR(255);
+  DECLARE l_error    VARCHAR(255);
   -- Timeline for the Race Arena. SYSDATE(6) is the real clock time (NOW() would be frozen per statement).
   DECLARE l_t_begin, l_t_locked, l_t_counted, l_t_written, l_t_end DATETIME(6);
 
@@ -45,49 +41,17 @@ BEGIN
   -- first read, because REPEATABLE READ fixes its snapshot at the first plain read. Every read below
   -- then happens after the lock, so it sees the other transaction's committed insert.
   IF p_safe THEN
-    SELECT capacity, course_id INTO l_capacity, l_course_id
-    FROM sections WHERE section_id = p_section_id
-    FOR UPDATE;
+    SELECT capacity INTO l_capacity FROM sections WHERE section_id = p_section_id FOR UPDATE;
   ELSE
-    SELECT capacity, course_id INTO l_capacity, l_course_id
-    FROM sections WHERE section_id = p_section_id;
+    SELECT capacity INTO l_capacity FROM sections WHERE section_id = p_section_id;
   END IF;
   SET l_t_locked = SYSDATE(6);
 
-  SELECT CONCAT(c.code, '-', s.section_code), c.credits INTO l_label, l_credits
+  SELECT CONCAT(c.code, '-', s.section_code) INTO l_label
   FROM sections s JOIN courses c ON c.course_id = s.course_id
   WHERE s.section_id = p_section_id;
 
-  SELECT max_credits INTO l_max_credits FROM students WHERE student_id = p_student_id;
-
-  -- Business rules, checked in order. The first one that fails becomes the rejection message.
-  IF l_capacity IS NULL THEN
-    SET l_reject = 'Section not found.';
-  ELSEIF l_max_credits IS NULL THEN
-    SET l_reject = 'Student not found.';
-  ELSEIF EXISTS (SELECT 1 FROM enrollments WHERE student_id = p_student_id AND section_id = p_section_id) THEN
-    SET l_reject = CONCAT('You are already enrolled in ', l_label, '.');
-  ELSEIF EXISTS (SELECT 1 FROM waitlist WHERE student_id = p_student_id AND section_id = p_section_id) THEN
-    SET l_reject = CONCAT('You are already on the waitlist for ', l_label, '.');
-  ELSEIF EXISTS (SELECT 1 FROM enrollments e JOIN sections s ON s.section_id = e.section_id
-                 WHERE e.student_id = p_student_id AND s.course_id = l_course_id
-                 UNION ALL
-                 SELECT 1 FROM waitlist w JOIN sections s ON s.section_id = w.section_id
-                 WHERE w.student_id = p_student_id AND s.course_id = l_course_id) THEN
-    SET l_reject = 'You are already registered in another section of this course.';
-  ELSEIF NOT fn_prereqs_met(p_student_id, l_course_id) THEN
-    SELECT GROUP_CONCAT(c.code ORDER BY c.code SEPARATOR ', ') INTO l_missing
-    FROM prerequisites p JOIN courses c ON c.course_id = p.prereq_course_id
-    WHERE p.course_id = l_course_id
-      AND NOT EXISTS (SELECT 1 FROM completed_courses cc
-                      WHERE cc.student_id = p_student_id AND cc.course_id = p.prereq_course_id);
-    SET l_reject = CONCAT('Missing prerequisite: ', l_missing, '.');
-  ELSEIF fn_current_credits(p_student_id) + l_credits > l_max_credits THEN
-    SET l_reject = CONCAT('Credit limit exceeded: ', fn_current_credits(p_student_id), ' enrolled + ',
-                          l_credits, ' would be over your limit of ', l_max_credits, '.');
-  ELSEIF fn_has_clash(p_student_id, p_section_id) THEN
-    SET l_reject = CONCAT(l_label, ' clashes with a class already in your timetable.');
-  END IF;
+  SET l_reject = fn_registration_error(p_student_id, p_section_id);
 
   IF l_reject IS NOT NULL THEN
     ROLLBACK;
@@ -241,6 +205,145 @@ BEGIN
   END LOOP;
   CLOSE cur_waitlist;
 
+  COMMIT;
+END$$
+
+
+
+-- Registers for several sections in one transaction. Each section gets a SAVEPOINT: if a section
+-- fails a rule, it is skipped; if an error happens while inserting it, ROLLBACK TO SAVEPOINT undoes
+-- only that section's work and the rest of the cart is kept. Sections are locked in section_id order,
+-- so two carts can never deadlock (compare sp_demo_deadlock).
+--   p_section_ids:  JSON array of section ids, e.g. '[3, 9, 12]'
+--   p_fail_section: simulate an error right after inserting this section (NULL = none)
+--   p_results:      JSON array of {section_id, status, msg}, one per section, in locking order
+CREATE PROCEDURE sp_register_cart(
+  IN  p_student_id   INT,
+  IN  p_section_ids  JSON,
+  IN  p_fail_section INT,
+  OUT p_results      JSON
+)
+BEGIN
+  DECLARE l_section  INT;
+  DECLARE l_capacity INT;
+  DECLARE l_enrolled INT;
+  DECLARE l_label    VARCHAR(20);
+  DECLARE l_status   VARCHAR(20);
+  DECLARE l_msg      VARCHAR(255);
+  DECLARE l_done     BOOLEAN DEFAULT FALSE;
+
+  DECLARE cur_cart CURSOR FOR
+    SELECT DISTINCT section_id
+    FROM JSON_TABLE(p_section_ids, '$[*]' COLUMNS (section_id INT PATH '$')) AS cart
+    ORDER BY section_id;
+
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET l_done = TRUE;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK;
+    RESIGNAL;
+  END;
+
+  SET p_results = JSON_ARRAY();
+  START TRANSACTION;
+  OPEN cur_cart;
+
+  cart_loop: LOOP
+    FETCH cur_cart INTO l_section;
+    IF l_done THEN
+      LEAVE cart_loop;
+    END IF;
+
+    SAVEPOINT cart_item;
+    cart_item: BEGIN
+      -- An error inside this block undoes only this section, then the loop carries on.
+      DECLARE EXIT HANDLER FOR SQLEXCEPTION
+      BEGIN
+        GET DIAGNOSTICS CONDITION 1 l_msg = MESSAGE_TEXT;
+        ROLLBACK TO SAVEPOINT cart_item;
+        SET l_status = 'REJECTED', l_msg = CONCAT('Rolled back to savepoint: ', l_msg);
+        INSERT INTO audit_log (action, student_id, section_id, details)
+        VALUES ('REJECT', p_student_id, l_section, l_msg);
+      END;
+      -- A SELECT ... INTO that finds no row must not end the outer cursor loop.
+      DECLARE CONTINUE HANDLER FOR NOT FOUND BEGIN END;
+
+      SET l_capacity = NULL, l_label = NULL;
+      SELECT capacity INTO l_capacity FROM sections WHERE section_id = l_section FOR UPDATE;
+      SET l_msg = fn_registration_error(p_student_id, l_section);
+
+      IF l_msg IS NOT NULL THEN
+        SET l_status = 'REJECTED';
+        INSERT INTO audit_log (action, student_id, section_id, details)
+        VALUES ('REJECT', p_student_id, l_section, l_msg);
+      ELSE
+        SELECT CONCAT(c.code, '-', s.section_code) INTO l_label
+        FROM sections s JOIN courses c ON c.course_id = s.course_id
+        WHERE s.section_id = l_section;
+        SELECT COUNT(*) INTO l_enrolled FROM enrollments WHERE section_id = l_section;
+
+        IF l_enrolled < l_capacity THEN
+          INSERT INTO enrollments (student_id, section_id) VALUES (p_student_id, l_section);
+          SET l_status = 'ENROLLED', l_msg = CONCAT('Enrolled in ', l_label, '.');
+        ELSE
+          INSERT INTO waitlist (student_id, section_id) VALUES (p_student_id, l_section);
+          SET l_status = 'WAITLISTED', l_msg = CONCAT(l_label, ' is full. You are on the waitlist.');
+        END IF;
+
+        IF l_section = p_fail_section THEN
+          SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Simulated failure after insert.';
+        END IF;
+      END IF;
+    END cart_item;
+
+    SET p_results = JSON_ARRAY_APPEND(p_results, '$',
+                      JSON_OBJECT('section_id', l_section, 'status', l_status, 'msg', l_msg));
+  END LOOP;
+
+  CLOSE cur_cart;
+  COMMIT;
+END$$
+
+
+-- Removes waitlist entries older than p_days, logging each one. Run daily by ev_expire_waitlist.
+CREATE PROCEDURE sp_expire_waitlist(IN p_days INT)
+BEGIN
+  DECLARE l_cutoff DATETIME(6) DEFAULT NOW(6) - INTERVAL p_days DAY;
+
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK;
+    RESIGNAL;
+  END;
+
+  START TRANSACTION;
+  INSERT INTO audit_log (action, student_id, section_id, details)
+  SELECT 'EXPIRE', student_id, section_id, CONCAT('Waitlist entry older than ', p_days, ' days.')
+  FROM waitlist
+  WHERE requested_at < l_cutoff;
+
+  DELETE FROM waitlist WHERE requested_at < l_cutoff;
+  COMMIT;
+END$$
+
+
+-- Deadlock demo: locks two sections with a pause in between. Two calls with the sections in
+-- opposite order each hold one lock and wait for the other's. InnoDB detects the cycle and rolls
+-- one transaction back with error 1213 (the "victim"); the other then gets both locks.
+CREATE PROCEDURE sp_demo_deadlock(IN p_first_section INT, IN p_second_section INT, IN p_delay DECIMAL(4,1))
+BEGIN
+  DECLARE l_capacity INT;
+
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK;
+    RESIGNAL;
+  END;
+
+  START TRANSACTION;
+  SELECT capacity INTO l_capacity FROM sections WHERE section_id = p_first_section FOR UPDATE;
+  DO SLEEP(p_delay);
+  SELECT capacity INTO l_capacity FROM sections WHERE section_id = p_second_section FOR UPDATE;
   COMMIT;
 END$$
 

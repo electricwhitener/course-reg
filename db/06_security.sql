@@ -13,10 +13,11 @@ CREATE ROLE app_student, app_admin, app_report;
 GRANT SELECT ON course_reg.* TO app_report;
 
 -- Students: register and drop through procedures only, and read the two views. No direct writes.
-GRANT EXECUTE ON PROCEDURE course_reg.sp_register TO app_student;
-GRANT EXECUTE ON PROCEDURE course_reg.sp_drop     TO app_student;
-GRANT SELECT  ON course_reg.v_section_seats       TO app_student;
-GRANT SELECT  ON course_reg.v_student_timetable   TO app_student;
+GRANT EXECUTE ON PROCEDURE course_reg.sp_register      TO app_student;
+GRANT EXECUTE ON PROCEDURE course_reg.sp_drop          TO app_student;
+GRANT EXECUTE ON PROCEDURE course_reg.sp_register_cart TO app_student;
+GRANT SELECT  ON course_reg.v_section_seats            TO app_student;
+GRANT SELECT  ON course_reg.v_student_timetable        TO app_student;
 
 -- Admins: everything a student and a reporter can do, plus changing capacity. Roles can hold roles.
 GRANT app_student, app_report TO app_admin;

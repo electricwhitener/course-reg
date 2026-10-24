@@ -1,4 +1,5 @@
--- 05_triggers.sql: audit logging and a waitlist guard, enforced on every write no matter who makes it.
+-- 05_triggers.sql: audit logging and a waitlist guard, enforced on every write no matter who makes it,
+-- plus the scheduled event that expires old waitlist entries.
 -- Audit rows written by a trigger are part of the same transaction, so a ROLLBACK removes them too.
 
 DELIMITER $$
@@ -50,3 +51,9 @@ BEGIN
 END$$
 
 DELIMITER ;
+
+-- Every night at midnight, drop waitlist entries that have waited more than 30 days.
+-- Needs the event scheduler, which is ON by default in MySQL 8.0 (SHOW VARIABLES LIKE 'event_scheduler').
+CREATE EVENT ev_expire_waitlist
+ON SCHEDULE EVERY 1 DAY STARTS CURRENT_DATE + INTERVAL 1 DAY
+DO CALL sp_expire_waitlist(30);

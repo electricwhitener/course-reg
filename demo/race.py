@@ -8,54 +8,33 @@ Each run first empties the race section, so it can be repeated without a reset.
 """
 import argparse
 import sys
-import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 import db  # noqa: E402
+import registration  # noqa: E402
 
 SECTION = 5          # CS302-A, capacity 1
-STUDENTS = (1, 2)    # Aarav and Diya, both eligible
-
-
-def register(student_id, safe, delay, results):
-    conn = db.get_connection()
-    try:
-        cur = conn.cursor()
-        args = cur.callproc("sp_register", (student_id, SECTION, safe, delay, False, None, None))
-        timeline = next(cur.stored_results()).fetchone()
-        results[student_id] = (args[5], args[6], timeline)
-    finally:
-        conn.close()
+STUDENTS = [1, 2]    # Aarav and Diya, both eligible
 
 
 def race(safe, delay):
-    conn = db.get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM waitlist WHERE section_id = %s", (SECTION,))
-    cur.execute("DELETE FROM enrollments WHERE section_id = %s", (SECTION,))
+    registration.clear_section(SECTION)
+    results = registration.run_race(SECTION, STUDENTS, safe, delay)
+    seats = db.query("SELECT enrolled, capacity, waitlist_len FROM v_section_seats WHERE section_id = %s",
+                     (SECTION,))[0]
 
-    results = {}
-    threads = [threading.Thread(target=register, args=(s, safe, delay, results)) for s in STUDENTS]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    cur.execute("SELECT enrolled, capacity, waitlist_len FROM v_section_seats WHERE section_id = %s",
-                (SECTION,))
-    enrolled, capacity, waiting = cur.fetchone()
-    conn.close()
-
-    start = min(r[2][0] for r in results.values())
-    for student_id, (status, msg, (t_begin, t_locked, *_rest, t_end)) in sorted(results.items()):
-        waited = (t_locked - t_begin).total_seconds()
-        finished = (t_end - start).total_seconds()
-        print(f"  student {student_id}: {status:<10} waited {waited:4.1f}s for lock, "
-              f"done at +{finished:4.1f}s  ({msg})")
-    print(f"  result: {enrolled}/{capacity} enrolled, {waiting} waitlisted"
-          + ("   <-- OVERBOOKED" if enrolled > capacity else ""))
-    return enrolled, waiting
+    start = min(r["timeline"]["t_begin"] for r in results)
+    for r in results:
+        t = r["timeline"]
+        waited = (t["t_locked"] - t["t_begin"]).total_seconds()
+        finished = (t["t_end"] - start).total_seconds()
+        print(f"  student {r['student_id']}: {r['status']:<10} waited {waited:4.1f}s for lock, "
+              f"done at +{finished:4.1f}s  ({r['msg']})")
+    overbooked = seats["enrolled"] > seats["capacity"]
+    print(f"  result: {seats['enrolled']}/{seats['capacity']} enrolled, {seats['waitlist_len']} waitlisted"
+          + ("   <-- OVERBOOKED" if overbooked else ""))
+    return seats["enrolled"], seats["waitlist_len"]
 
 
 def main():

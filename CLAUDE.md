@@ -23,14 +23,16 @@ db/reset.sh          # drop + recreate the DB, then run db/0*.sql in order
 db/tests.sql         # CALLs procedures and SELECTs expected state
 app/app.py           # Flask routes
 app/db.py            # connection handling + SQL Inspector logging; ALL DB access goes through here
-app/registration.py  # thin Python wrappers around CALL sp_...()
+app/registration.py  # thin Python wrappers around CALL sp_...(), plus the race and deadlock runners
+app/isolation.py     # Isolation Lab: two sessions stepping through scripted anomaly scenarios
 app/templates/  app/static/
-demo/race.py  demo/manual_lock_demo.sql
-docs/PLAN.md  docs/report/
+demo/race.py deadlock.py isolation.py   # command-line versions of the demos
+demo/manual_lock_demo.sql explain_indexes.sql
+docs/PLAN.md  docs/report/db-results.md   # measured results for the report
 ```
 | Area | Owner | Rule |
 |---|---|---|
-| `db/`, `app/registration.py`, `demo/` | **Person A** (database engine) | Only A edits these |
+| `db/`, `app/registration.py`, `app/isolation.py`, `demo/` | **Person A** (database engine) | Only A edits these |
 | `app/templates/`, `app/static/` | **Person B** (interface) | Only B edits these |
 | `app/app.py`, `app/db.py`, `CLAUDE.md`, root config | Shared | Small PRs, merged quickly |
 
@@ -86,7 +88,8 @@ pass cleanly.
    - Days of the week are `ENUM('MON','TUE','WED','THU','FRI','SAT')`.
    - Every constraint and index is named explicitly: `fk_<table>_<target>`, `uq_<table>_<cols>`,
      `chk_<table>_<rule>`, `idx_<table>_<cols>`.
-   - Routines and views: `sp_` procedures, `fn_` functions, `trg_` triggers, `v_` views.
+   - Routines and views: `sp_` procedures, `fn_` functions, `trg_` triggers, `v_` views,
+     `ev_` scheduled events.
      Parameters use `p_`, local variables use `l_` (not `v_`, which means a view), and cursors use
      `cur_`.
    - Database roles are `app_<role>`; their login users are `coursereg_<role>`.
@@ -111,11 +114,23 @@ breaking change: update this section in the same PR and call it out in the descr
 | `sp_register` | `(p_student_id INT, p_section_id INT, p_safe BOOLEAN, p_delay DECIMAL(4,1), p_fail BOOLEAN, OUT p_status VARCHAR(20), OUT p_msg VARCHAR(255))` |
 | `sp_drop` | `(p_student_id INT, p_section_id INT)`: deletes the enrollment and promotes the earliest waitlisted student |
 | `sp_set_capacity` | `(p_section_id INT, p_new_capacity INT)`: a cursor promotes waitlisted students while seats remain |
+| `sp_register_cart` | `(p_student_id INT, p_section_ids JSON, p_fail_section INT, OUT p_results JSON)`: one transaction, a SAVEPOINT per section; `p_results` is `[{section_id, status, msg}]` |
+| `sp_expire_waitlist` | `(p_days INT)`: removes waitlist entries older than `p_days` (run nightly by `ev_expire_waitlist` with 30) |
+| `sp_demo_deadlock` | `(p_first_section INT, p_second_section INT, p_delay DECIMAL(4,1))`: demo only; locks two sections in the given order |
+| `fn_registration_error` | `(p_student_id INT, p_section_id INT) RETURNS VARCHAR(255)`: the first rule that fails, or NULL. Shared by `sp_register` and the cart |
 | `fn_has_clash` | `(p_student_id INT, p_section_id INT) RETURNS BOOLEAN` |
 | `fn_prereqs_met` | `(p_student_id INT, p_course_id INT) RETURNS BOOLEAN` |
 | `fn_current_credits` | `(p_student_id INT) RETURNS INT` |
 | `v_section_seats` | section, course, instructor, capacity, enrolled, seats_left, waitlist_len, fill_pct |
 | `v_student_timetable` | one row per meeting of each section the student is enrolled in |
+| `v_course_demand` | per course: capacity, enrolled, waitlisted, demand, demand_pct, `dept_rank` (RANK within department) |
+| `v_oversubscribed_courses` | courses whose demand exceeds their total capacity |
+| `v_daily_activity` | per day from `audit_log`: enrolls, drops, waitlists, rejects, running `total_enrolled` |
+| `v_lock_monitor` | live row locks: thread_id, table_name, lock_type, lock_mode, lock_status, lock_data, blocked_by_thread_id |
+
+`app/registration.py` wraps all of these for Python: `register`, `register_cart`, `drop`,
+`set_capacity`, `run_race`, `lock_snapshot`, `clear_section` (demo reset), `run_deadlock`. Routes
+should call these instead of `db.call` directly.
 
 `sp_register` sets `p_status` to one of `ENROLLED`, `WAITLISTED` or `REJECTED`, and `p_msg` to a
 human-readable reason. The UI shows `p_msg` verbatim in a toast. Business-rule failures are reported

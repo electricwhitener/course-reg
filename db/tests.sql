@@ -58,6 +58,15 @@ INSERT INTO test_results (name, passed) VALUES
   ('fn_prereqs_met: course with no prerequisites',      fn_prereqs_met(4, 1)),
   ('fn_current_credits: Vihaan has 7',                  fn_current_credits(5) = 7);
 
+-- Analytics views (on untouched seed data) --------------------------------------------------------
+INSERT INTO test_results (name, passed) VALUES
+  ('v_course_demand: MA102 ranks #1 in Mathematics',
+     (SELECT course_code FROM v_course_demand WHERE dept_name = 'Mathematics' AND dept_rank = 1) = 'MA102'),
+  ('v_oversubscribed_courses: MA102 and PH201',
+     (SELECT GROUP_CONCAT(course_code ORDER BY course_code) FROM v_oversubscribed_courses) = 'MA102,PH201'),
+  ('v_daily_activity: running total = 24 seeded enrollments',
+     (SELECT total_enrolled FROM v_daily_activity ORDER BY activity_date DESC LIMIT 1) = 24);
+
 -- sp_register ------------------------------------------------------------------------------------
 CALL sp_register(1, 5, TRUE, 0, FALSE, @status, @msg);
 INSERT INTO test_results (name, passed) VALUES
@@ -139,6 +148,38 @@ CALL test_expect_error('waitlist trigger blocks enrolled course',
 INSERT INTO test_results (name, passed) VALUES
   ('ENROLL and WAITLIST audited', EXISTS (SELECT 1 FROM audit_log WHERE action = 'ENROLL' AND student_id = 1 AND section_id = 5)
                                   AND EXISTS (SELECT 1 FROM audit_log WHERE action = 'WAITLIST' AND student_id = 2 AND section_id = 5));
+
+-- sp_register_cart (savepoints) -----------------------------------------------------------------
+-- Diya: CS301-A rejected (missing MA201), CS302-A waitlisted (Aarav took the seat above),
+-- MA102-A enrolled, PH102-A fails after its insert and is rolled back to its savepoint.
+CALL sp_register_cart(2, '[11, 4, 8, 5]', 11, @cart);
+INSERT INTO test_results (name, passed) VALUES
+  ('cart: one result per section, in section_id order',
+     JSON_EXTRACT(@cart, '$[*].section_id') = JSON_ARRAY(4, 5, 8, 11)),
+  ('cart: statuses REJECTED, WAITLISTED, ENROLLED, REJECTED',
+     JSON_EXTRACT(@cart, '$[*].status') = JSON_ARRAY('REJECTED', 'WAITLISTED', 'ENROLLED', 'REJECTED')),
+  ('cart: good sections kept',
+     EXISTS (SELECT 1 FROM enrollments WHERE student_id = 2 AND section_id = 8)
+     AND EXISTS (SELECT 1 FROM waitlist WHERE student_id = 2 AND section_id = 5)),
+  ('cart: failed section rolled back to savepoint',
+     NOT EXISTS (SELECT 1 FROM enrollments WHERE student_id = 2 AND section_id = 11)
+     AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'ENROLL' AND student_id = 2 AND section_id = 11)
+     AND EXISTS (SELECT 1 FROM audit_log WHERE action = 'REJECT' AND student_id = 2 AND section_id = 11
+                 AND details LIKE 'Rolled back to savepoint%'));
+
+-- sp_expire_waitlist / event --------------------------------------------------------------------
+INSERT INTO waitlist (student_id, section_id, requested_at) VALUES (15, 12, NOW() - INTERVAL 40 DAY);
+SET @waiting_before = (SELECT COUNT(*) FROM waitlist);
+CALL sp_expire_waitlist(30);
+INSERT INTO test_results (name, passed) VALUES
+  ('expiry: only the 40-day-old entry removed',
+     (SELECT COUNT(*) FROM waitlist) = @waiting_before - 1
+     AND NOT EXISTS (SELECT 1 FROM waitlist WHERE student_id = 15 AND section_id = 12)),
+  ('expiry: EXPIRE audited',
+     EXISTS (SELECT 1 FROM audit_log WHERE action = 'EXPIRE' AND student_id = 15 AND section_id = 12)),
+  ('event ev_expire_waitlist is enabled',
+     EXISTS (SELECT 1 FROM information_schema.events
+             WHERE event_schema = 'course_reg' AND event_name = 'ev_expire_waitlist' AND status = 'ENABLED'));
 
 -- Results ----------------------------------------------------------------------------------------
 SELECT test_no, IF(passed, 'PASS', 'FAIL') AS result, name FROM test_results ORDER BY test_no;
