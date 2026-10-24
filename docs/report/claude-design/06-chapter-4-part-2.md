@@ -92,7 +92,8 @@ must wait for that lock, and when it gets it, its reads see the committed insert
 The locking read must be the first read in the transaction. Under REPEATABLE READ the snapshot is
 fixed at the first plain read, and a snapshot taken before the lock would miss A's insert. The live
 lock monitor (Fig. 5.8) reads `performance_schema.data_locks` through the view `v_lock_monitor` and
-shows the waiting lock while the race runs.
+shows the waiting lock while the race runs. Its third row, a shared (S) lock on section 9, comes from the
+first transaction reading the student's other class (MA201-A) during its rule checks.
 
 **Isolation levels.** We ran three scripted experiments with two sessions at each of the four
 isolation levels (Table 4.7).
