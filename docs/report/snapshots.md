@@ -67,24 +67,37 @@ one `waited 2.0s for lock`), then `10/10 runs ended with exactly 1 enrolled and 
 **Capture:** all of it.
 
 ### Fig. 5.8: live lock monitor → `fig-5-08.png`
-This needs **two terminals at once**, because the lock only exists while the race is running.
-1. Click the **+** at the top of the terminal panel to open a second terminal. Run the first three setup
-   lines from section B in it (not `bash db/reset.sh`).
-2. In the **second** terminal, type this command but **don't press Enter yet**:
+This needs **two terminals side by side**, because the lock only exists while the race is running.
+
+1. In your terminal, run `bash db/reset.sh`.
+2. Split the terminal: press **Ctrl + Shift + 5**, or click the split icon (two boxes side by side)
+   at the top right of the terminal panel. A second terminal opens on the right.
+3. Click in the **right** terminal and run `export MYSQL_PWD=devpass`, then `clear`.
+4. Still in the right terminal, paste this command but **don't press Enter yet**:
    ```bash
    mysql -u coursereg_report course_reg -t -e "SELECT * FROM v_lock_monitor WHERE table_name = 'sections' AND lock_type = 'RECORD'"
    ```
-3. Switch to the **first** terminal (use the terminal list on the right of the panel) and run:
+5. Click in the **left** terminal, run `clear`, then run:
    ```bash
-   clear
    python demo/race.py --safe --delay 15
    ```
-4. **Within 15 seconds**, switch to the second terminal and press **Enter**.
+   It prints `Run 1 (SAFE, delay 15.0s)` and then seems to hang. That's the race in progress.
+6. **Within 15 seconds**, click in the right terminal and press **Enter**.
 
-**You should see:** a small table with one row `GRANTED` and one row `WAITING`. The `WAITING`
-row's `blocked_by_thread_id` equals the other row's `thread_id`.
-**Capture:** the command and the table in the second terminal. If the table came back empty, you were
-too slow. Wait for the race to finish and try again.
+**You should see three rows:**
+- `X,REC_NOT_GAP | GRANTED | 5`: the first student holds the exclusive lock on section 5 (CS302-A).
+- `X,REC_NOT_GAP | WAITING | 5`: the second student is waiting for that same lock. Its
+  `blocked_by_thread_id` equals the first row's `thread_id`.
+- `S,REC_NOT_GAP | GRANTED | 9`: a shared lock on section 9 (MA201-A), taken when the procedure read
+  the student's other class during the rule checks. It's normal; leave it in the screenshot.
+
+**Capture:** in the right terminal, the command line and the table under it.
+
+**If there's no `WAITING` row**, you pressed Enter after the first 15 seconds, when the second student
+already had the lock. The left terminal finishes after about 30 seconds in total. When it does, repeat
+from step 5. There's no need to reset, because each race clears the section first.
+
+Afterwards, close the right terminal (trash-can icon) and run `bash db/reset.sh` in the left one.
 
 ### Fig. 5.9: deadlock → `fig-5-09.png`
 ```bash
