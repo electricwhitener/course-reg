@@ -173,3 +173,8 @@ with microseconds, and `TIME` values are `"HH:MM"`.
 4. The *other* person reviews (`/code-review` helps) and merges.
 5. B can work against stub functions in `app/registration.py` until A's procedures merge. Stubs must
    return the same shape as the real contract.
+6. **No AI attribution.** Commits and PRs show only the developer who made them. Never add
+   `Co-Authored-By: Claude` trailers, "Generated with Claude Code" lines, or session links.
+   `.claude/settings.json` turns these off. Each developer sets `git config user.name` and
+   `user.email` to their own GitHub account (the `ID+username@users.noreply.github.com` address from
+   GitHub → Settings → Emails works).
