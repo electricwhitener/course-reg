@@ -133,26 +133,39 @@ run to run, so make sure Table 4.3 and the Conclusion quote the numbers in **you
 **Then run `bash db/reset.sh`**, because this script adds 100,000 test rows.
 
 ### Fig. 5.12: roles → `fig-5-12.png`
+Taken inside the `mysql` client, so the figure shows a plain `mysql>` prompt (no computer name) and
+stays narrow enough to read in print.
 ```bash
-clear
 bash db/reset.sh
-mysql -u coursereg_student course_reg -e "INSERT INTO enrollments (student_id, section_id) VALUES (1, 5)"
-mysql -u coursereg_student course_reg -t -e "CALL sp_register(1, 5, TRUE, 0, FALSE, @s, @m); SELECT @s AS status, @m AS message"
+mysql -u coursereg_student course_reg
 ```
-**You should see:** first `ERROR 1142 … INSERT command denied to user 'coursereg_student'`, then (after
-a small table of timestamps) `ENROLLED | Enrolled in CS302-A.`
-**Capture:** the commands and both outputs. It shows the student account can't touch tables directly
-but can register through the procedure.
+The prompt changes to `mysql>`. Type these one at a time (the first clears the screen):
+```sql
+\! clear
+INSERT INTO enrollments (student_id, section_id) VALUES (1, 5);
+CALL sp_register(1, 5, TRUE, 0, FALSE, @s, @m)\G
+SELECT @s AS status, @m AS message;
+```
+**You should see:** `ERROR 1142 (42000): INSERT command denied …`, then the five step timestamps
+listed vertically (that's what `\G` does), then a small table `ENROLLED | Enrolled in CS302-A.`
+**Capture:** from the first `mysql>` line to the bottom of that table. Then type `exit`.
 
 ### Fig. 5.13: demand ranking → `fig-5-13.png`
+Reset first, because Fig. 5.12 just enrolled a student and that changes the ranking:
 ```bash
-clear
 bash db/reset.sh
-mysql -u coursereg_dev course_reg -t -e "SELECT dept_name, course_code, course_title, capacity, enrolled, waitlisted, demand, dept_rank FROM v_course_demand ORDER BY dept_name, dept_rank"
+mysql -u coursereg_dev course_reg
 ```
-**You should see:** 10 courses grouped by department, with ranks restarting at 1 for each department.
-MA102 is rank 1 in Mathematics, and CS301 and CS302 share rank 3.
-**Capture:** the whole table.
+Then, pressing Enter at the end of each line (the client shows `->` while the query continues):
+```sql
+\! clear
+SELECT dept_name, course_code, course_title, demand, dept_rank
+FROM v_course_demand
+ORDER BY dept_name, dept_rank;
+```
+**You should see:** 10 courses grouped by department, with `dept_rank` restarting at 1 for each
+department. MA102 is rank 1 in Mathematics, and CS301 and CS302 share rank 3.
+**Capture:** from `mysql> SELECT` to `10 rows in set`. Then type `exit` and run `bash db/reset.sh`.
 
 ## D. Web page screenshots (you can do 5.1 and 5.2 now)
 1. In the terminal: `bash db/reset.sh`, then `flask --app app/app.py run --debug`.
