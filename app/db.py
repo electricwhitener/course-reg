@@ -14,6 +14,9 @@ def get_connection():
         database=os.environ["DB_NAME"],
         user=os.environ["DB_USER"],
         password=os.environ["DB_PASSWORD"],
+        # Procedures manage their own transactions. Without autocommit, writes made outside one
+        # (like the REJECT audit row) would wait for a commit that never comes.
+        autocommit=True,
     )
 
 

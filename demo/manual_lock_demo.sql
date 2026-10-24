@@ -1,0 +1,33 @@
+-- manual_lock_demo.sql: the FOR UPDATE race by hand, in two terminals, for the viva.
+-- Open two terminals and log in to both:   mysql -u coursereg_dev -p course_reg
+-- Run the steps in order, switching terminals as marked. Run `bash db/reset.sh` afterwards.
+-- CS302-A is section 5: capacity 1, empty after a reset.
+
+-- ===== UNSAFE: plain SELECT (lost update) =====
+-- [A] START TRANSACTION;
+-- [A] SELECT COUNT(*) FROM enrollments WHERE section_id = 5;      -- 0: one seat free
+-- [B] START TRANSACTION;
+-- [B] SELECT COUNT(*) FROM enrollments WHERE section_id = 5;      -- 0 as well
+-- [A] INSERT INTO enrollments (student_id, section_id) VALUES (1, 5);
+-- [B] INSERT INTO enrollments (student_id, section_id) VALUES (2, 5);
+-- [A] COMMIT;
+-- [B] COMMIT;
+-- [A] SELECT enrolled, capacity FROM v_section_seats WHERE section_id = 5;   -- 2 / 1: overbooked
+-- [A] DELETE FROM enrollments WHERE section_id = 5;               -- clean up for the safe run
+
+-- ===== SAFE: SELECT ... FOR UPDATE =====
+-- [A] START TRANSACTION;
+-- [A] SELECT capacity FROM sections WHERE section_id = 5 FOR UPDATE;   -- A holds an X lock on row 5
+-- [B] START TRANSACTION;
+-- [B] SELECT capacity FROM sections WHERE section_id = 5 FOR UPDATE;   -- B hangs here, waiting
+-- (optional, in a third terminal) SELECT * FROM v_lock_monitor;        -- A GRANTED, B WAITING
+-- [A] SELECT COUNT(*) FROM enrollments WHERE section_id = 5;            -- 0
+-- [A] INSERT INTO enrollments (student_id, section_id) VALUES (1, 5);
+-- [A] COMMIT;                                                           -- B wakes up now
+-- [B] SELECT COUNT(*) FROM enrollments WHERE section_id = 5;            -- 1: B sees the seat is gone
+-- [B] INSERT INTO waitlist (student_id, section_id) VALUES (2, 5);
+-- [B] COMMIT;
+
+-- ===== The same through the procedure (what the app does) =====
+-- [A] CALL sp_register(1, 5, TRUE, 10, FALSE, @s, @m); SELECT @s, @m;   -- sleeps 10 s holding the lock
+-- [B] CALL sp_register(2, 5, TRUE, 0,  FALSE, @s, @m); SELECT @s, @m;   -- waits for A, then WAITLISTED

@@ -47,6 +47,11 @@ CREATE USER 'coursereg_dev'@'localhost' IDENTIFIED BY 'devpass';
 GRANT ALL PRIVILEGES ON course_reg.* TO 'coursereg_dev'@'localhost';
 GRANT PROCESS ON *.* TO 'coursereg_dev'@'localhost';                  -- lock monitor
 GRANT SELECT ON performance_schema.* TO 'coursereg_dev'@'localhost';  -- lock monitor
+-- 06_security.sql creates roles and users, and grants them access:
+GRANT CREATE ROLE, DROP ROLE, CREATE USER, ROLE_ADMIN ON *.* TO 'coursereg_dev'@'localhost';
+GRANT ALL PRIVILEGES ON course_reg.* TO 'coursereg_dev'@'localhost' WITH GRANT OPTION;
+-- Binary logging is on by default, and without this only SUPER can create functions and triggers:
+SET PERSIST log_bin_trust_function_creators = 1;
 ```
 WSL only: if systemd isn't enabled, run `sudo service mysql start` after each WSL restart.
 
@@ -82,12 +87,17 @@ pass cleanly.
    - Every constraint and index is named explicitly: `fk_<table>_<target>`, `uq_<table>_<cols>`,
      `chk_<table>_<rule>`, `idx_<table>_<cols>`.
    - Routines and views: `sp_` procedures, `fn_` functions, `trg_` triggers, `v_` views.
-     Parameters use `p_` and local variables use `v_`.
+     Parameters use `p_`, local variables use `l_` (not `v_`, which means a view), and cursors use
+     `cur_`.
+   - Database roles are `app_<role>`; their login users are `coursereg_<role>`.
 5. **MySQL 8.0 syntax only.** No 8.4-only features.
 6. **SQL files:** any file with routines or triggers uses `DELIMITER $$ ... $$ DELIMITER ;` and must
    load with the plain `mysql` CLI, because that's the same command on both machines. Each file is
    re-runnable after `reset.sh` (no assumptions about leftover state). Stored functions declare
    `READS SQL DATA` (or `DETERMINISTIC`), because binary logging is on by default in 8.0.
+   In a locking procedure, the `SELECT ... FOR UPDATE` on `sections` must be the transaction's first
+   read: REPEATABLE READ fixes the snapshot at the first plain read, and a snapshot taken before the
+   lock would miss the other transaction's insert.
 7. **3NF:** seats taken is always `COUNT(*)` from `enrollments`, never a stored counter. Concurrency
    control locks the **`sections` row**.
 8. **Line endings are LF** (enforced by `.gitattributes`).
@@ -111,6 +121,11 @@ breaking change: update this section in the same PR and call it out in the descr
 human-readable reason. The UI shows `p_msg` verbatim in a toast. Business-rule failures are reported
 through `REJECTED` + `p_msg`. Unexpected errors (and `p_fail = TRUE`) roll back and propagate as a
 MySQL error (`SIGNAL`/`RESIGNAL`, SQLSTATE `45000`), which the app must catch and display.
+
+`sp_register` also returns one result set with a single row, `t_begin, t_locked, t_counted,
+t_written, t_end` (`DATETIME(6)`, NULL for steps that didn't happen), which the Race Arena timeline
+uses. Python reads it with `cursor.stored_results()`. App connections use `autocommit=True` (set in
+`app/db.py`).
 
 `p_safe = FALSE` deliberately skips `FOR UPDATE` so the race demo can overbook. `p_delay` (seconds)
 widens the race window. Both exist for the demo. Normal UI calls pass `p_safe = TRUE`, `p_delay = 0`
