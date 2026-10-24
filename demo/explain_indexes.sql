@@ -37,11 +37,11 @@ ANALYZE TABLE audit_log;
 ALTER TABLE audit_log DROP INDEX idx_audit_log_logged_at;
 SELECT 'Audit feed BEFORE idx_audit_log_logged_at' AS step;
 EXPLAIN SELECT * FROM audit_log ORDER BY logged_at DESC LIMIT 20;
-EXPLAIN ANALYZE SELECT * FROM audit_log ORDER BY logged_at DESC LIMIT 20;
+EXPLAIN ANALYZE SELECT * FROM audit_log ORDER BY logged_at DESC LIMIT 20\G
 
 ALTER TABLE audit_log ADD INDEX idx_audit_log_logged_at (logged_at);
 SELECT 'Audit feed AFTER idx_audit_log_logged_at' AS step;
 EXPLAIN SELECT * FROM audit_log ORDER BY logged_at DESC LIMIT 20;
-EXPLAIN ANALYZE SELECT * FROM audit_log ORDER BY logged_at DESC LIMIT 20;
+EXPLAIN ANALYZE SELECT * FROM audit_log ORDER BY logged_at DESC LIMIT 20\G
 
 DELETE FROM audit_log WHERE details = 'bulk test row';

@@ -1,5 +1,7 @@
 # Report outline (CSC2131 RDBMS Lab format)
 
+> **Update:** the full report text is now in `claude-design/` (numbered paste files). The "Still needed" column below is from before that.
+
 The official chapter structure from "CSC2131 RDBMS Lab Project Report Format Final.docx", mapped to
 where the material already exists in this repo and who writes each part. The A/B split follows
 PLAN.md §2.

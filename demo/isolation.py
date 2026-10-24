@@ -4,6 +4,7 @@ The resulting table goes in the report's isolation-levels section.
     python demo/isolation.py
 """
 import sys
+import textwrap
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
@@ -19,7 +20,8 @@ def describe(result):
 
 
 for key, scenario in SCENARIOS.items():
-    print(f"\n== {scenario['title']} ==   ({scenario['expect']})")
+    print(f"\n== {scenario['title']} ==")
+    print(textwrap.fill(scenario["expect"], width=90, initial_indent="   ", subsequent_indent="   "))
     for level in LEVELS:
         lab = IsolationLab(level)
         try:
