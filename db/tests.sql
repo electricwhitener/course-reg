@@ -65,7 +65,11 @@ INSERT INTO test_results (name, passed) VALUES
   ('v_oversubscribed_courses: MA102 and PH201',
      (SELECT GROUP_CONCAT(course_code ORDER BY course_code) FROM v_oversubscribed_courses) = 'MA102,PH201'),
   ('v_daily_activity: running total = 24 seeded enrollments',
-     (SELECT total_enrolled FROM v_daily_activity ORDER BY activity_date DESC LIMIT 1) = 24);
+     (SELECT total_enrolled FROM v_daily_activity ORDER BY activity_date DESC LIMIT 1) = 24),
+  ('v_waitlist_positions: Advik, Zara, Nikhil are 1, 2, 3 for MA102-B',
+     (SELECT GROUP_CONCAT(student_id ORDER BY position) FROM v_waitlist_positions WHERE section_id = 14) = '12,13,14'),
+  ('v_audit_feed: names filled in',
+     (SELECT COUNT(*) FROM v_audit_feed WHERE student_name IS NULL OR section_label IS NULL) = 0);
 
 -- sp_register ------------------------------------------------------------------------------------
 CALL sp_register(1, 5, TRUE, 0, FALSE, @status, @msg);

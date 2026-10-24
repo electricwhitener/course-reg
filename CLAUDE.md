@@ -123,6 +123,8 @@ breaking change: update this section in the same PR and call it out in the descr
 | `fn_current_credits` | `(p_student_id INT) RETURNS INT` |
 | `v_section_seats` | section, course, instructor, capacity, enrolled, seats_left, waitlist_len, fill_pct |
 | `v_student_timetable` | one row per meeting of each section the student is enrolled in |
+| `v_waitlist_positions` | student_id, section_id, course_code, course_title, section_code, requested_at, position (1 = next) |
+| `v_audit_feed` | audit_log with student_name and section_label |
 | `v_course_demand` | per course: capacity, enrolled, waitlisted, demand, demand_pct, `dept_rank` (RANK within department) |
 | `v_oversubscribed_courses` | courses whose demand exceeds their total capacity |
 | `v_daily_activity` | per day from `audit_log`: enrolls, drops, waitlists, rejects, running `total_enrolled` |
@@ -145,6 +147,24 @@ uses. Python reads it with `cursor.stored_results()`. App connections use `autoc
 `p_safe = FALSE` deliberately skips `FOR UPDATE` so the race demo can overbook. `p_delay` (seconds)
 widens the race window. Both exist for the demo. Normal UI calls pass `p_safe = TRUE`, `p_delay = 0`
 and `p_fail = FALSE`.
+
+## JSON API (`app/app.py`)
+Pages fetch from these routes. A MySQL error comes back as `{"error": msg}` with status 400, and
+the `api()` helper in `static/app.js` turns that into a thrown `Error`. Timestamps are ISO strings
+with microseconds, and `TIME` values are `"HH:MM"`.
+
+| Route | Does |
+|---|---|
+| `GET /api/students`, `GET /api/sections` | student list (navbar switcher), `v_section_seats` |
+| `GET /api/students/<id>/timetable`, `.../waitlist` | `v_student_timetable`, `v_waitlist_positions` |
+| `POST /api/register` `{student_id, section_id, fail?}` | `registration.register` → `{status, msg, timeline}` |
+| `POST /api/cart` `{student_id, section_ids, fail_section?}` | `registration.register_cart` |
+| `POST /api/drop` `{student_id, section_id}` | `registration.drop` |
+| `POST /api/admin/capacity` `{section_id, capacity}`, `GET /api/admin/audit?limit=` | capacity change (cursor), `v_audit_feed` newest first |
+| `GET /api/analytics/<name>` | `section_seats`, `course_demand`, `oversubscribed`, `daily_activity` |
+| `POST /api/race` `{section_id, student_ids, safe, delay}`, `POST /api/race/clear`, `GET /api/locks` | Race Arena; poll `/api/locks` while `/api/race` runs |
+| `POST /api/deadlock` `{first_section?, second_section?}` | deadlock demo + InnoDB report |
+| `GET /api/isolation/scenarios`, `POST /api/isolation/start` `{level}`, `.../step` `{level, scenario, index}`, `.../stop` | Isolation Lab |
 
 ## Git workflow
 1. `git pull` on `main`, then `git checkout -b feat/<short-name>` (or `fix/...`, `docs/...`).

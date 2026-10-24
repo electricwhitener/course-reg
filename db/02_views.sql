@@ -43,6 +43,35 @@ JOIN courses c          ON c.course_id = s.course_id
 JOIN instructors i      ON i.instructor_id = s.instructor_id
 JOIN section_meetings m ON m.section_id = s.section_id;
 
+-- Each waitlisted student's place in line (1 = promoted next), numbered per section by ROW_NUMBER().
+CREATE VIEW v_waitlist_positions AS
+SELECT w.student_id,
+       w.section_id,
+       c.code AS course_code,
+       c.title AS course_title,
+       s.section_code,
+       w.requested_at,
+       ROW_NUMBER() OVER (PARTITION BY w.section_id ORDER BY w.requested_at) AS position
+FROM waitlist w
+JOIN sections s ON s.section_id = w.section_id
+JOIN courses c  ON c.course_id = s.course_id;
+
+-- The audit log with names instead of bare ids, for the admin feed. LEFT JOINs keep log rows whose
+-- student or section no longer exists.
+CREATE VIEW v_audit_feed AS
+SELECT a.log_id,
+       a.logged_at,
+       a.action,
+       a.student_id,
+       st.name AS student_name,
+       a.section_id,
+       CONCAT(c.code, '-', s.section_code) AS section_label,
+       a.details
+FROM audit_log a
+LEFT JOIN students st ON st.student_id = a.student_id
+LEFT JOIN sections s  ON s.section_id = a.section_id
+LEFT JOIN courses c   ON c.course_id = s.course_id;
+
 -- Analytics ---------------------------------------------------------------------------------------
 
 -- Demand per course (enrolled + waitlisted over all its sections), ranked within its department.

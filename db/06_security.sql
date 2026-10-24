@@ -18,6 +18,7 @@ GRANT EXECUTE ON PROCEDURE course_reg.sp_drop          TO app_student;
 GRANT EXECUTE ON PROCEDURE course_reg.sp_register_cart TO app_student;
 GRANT SELECT  ON course_reg.v_section_seats            TO app_student;
 GRANT SELECT  ON course_reg.v_student_timetable        TO app_student;
+GRANT SELECT  ON course_reg.v_waitlist_positions       TO app_student;
 
 -- Admins: everything a student and a reporter can do, plus changing capacity. Roles can hold roles.
 GRANT app_student, app_report TO app_admin;
