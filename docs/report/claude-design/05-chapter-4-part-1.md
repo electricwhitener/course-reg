@@ -176,7 +176,7 @@ difference was measurable.
 | Query | Without index | With index |
 |---|---|---|
 | Clash detection join on `section_meetings` | type `ALL`: full scan of all 24 meetings | type `ref` on `idx_section_meetings_day_start`: about 4 rows (same day only) |
-| 20 newest audit rows (100,000-row table) | `ALL` + `Using filesort`: 100,029 rows read, about 23 ms | `Backward index scan` on `idx_audit_log_logged_at`: 20 rows read, under 0.1 ms |
+| 20 newest audit rows (100,000-row table) | `ALL` + `Using filesort`: 100,029 rows read, about 46 ms | `Backward index scan` on `idx_audit_log_logged_at`: 20 rows read, under 0.1 ms |
 
 The audit index keeps rows in `logged_at` order in a B+ tree, so MySQL reads the last 20 entries and
 stops, with no sorting at all.

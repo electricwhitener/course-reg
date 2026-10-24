@@ -125,9 +125,9 @@ clear
 bash db/reset.sh && mysql -u coursereg_dev course_reg -t < demo/explain_indexes.sql
 ```
 **Scroll up** to the box that says `Audit feed BEFORE idx_audit_log_logged_at`.
-**Capture:** from that box down to the end. Before: `ALL … Using filesort`, and the `actual time=` figures around 20–25 (milliseconds).
-After: `Backward index scan`, and `actual time=` figures below 0.1. Your exact times will differ a
-little from run to run; that's normal. Take two screenshots if it doesn't fit (`fig-5-11a` = BEFORE,
+**Capture:** from that box down to the end. Before: `ALL … Using filesort`, and `actual time=` figures in the tens of milliseconds (for example
+45.6). After: `Backward index scan`, and `actual time=` figures below 0.1. The times change from
+run to run, so make sure Table 4.3 and the Conclusion quote the numbers in **your** screenshot. Take two screenshots if it doesn't fit (`fig-5-11a` = BEFORE,
 `fig-5-11b` = AFTER).
 
 **Then run `bash db/reset.sh`**, because this script adds 100,000 test rows.

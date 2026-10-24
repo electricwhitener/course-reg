@@ -10,7 +10,7 @@ central result is the race test. Without a lock, two students both got the singl
 with `SELECT … FOR UPDATE` inside one transaction, exactly one student was enrolled and the other
 waitlisted in every one of 10 runs. The second transaction visibly waited about 2 seconds for the
 lock. The same project gave measured results for the four isolation levels, a deadlock detected and
-resolved by InnoDB, and an index that cut a query from about 23 ms to under 0.1 ms. All 43 SQL tests pass on a
+resolved by InnoDB, and an index that cut a query from about 46 ms to under 0.1 ms. All 43 SQL tests pass on a
 fresh database.
 
 Putting the rules in stored procedures had a practical benefit too. The two of us worked on separate
