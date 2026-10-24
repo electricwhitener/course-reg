@@ -1,4 +1,4 @@
-Add Chapter 2 below, starting on a new page after Chapter 1. Underline the words between <u> and </u> instead of showing the tags. Follow the layout rules from my first message. Use the text below exactly as written: do not rewrite, shorten, summarise or add anything. Keep every table complete, with its caption above it. Render each "[Insert Fig. X.Y]" line as an empty light-grey box, full text width and about 7 cm tall, with the figure caption centred on the line below it. I will add the images later.
+Add Chapter 2 below, starting on a new page after Chapter 1. Underline the words between <u> and </u> instead of showing the tags. Follow the layout rules from my first message. Text in backticks is code: show it in Courier New 11 pt without the backticks, as in the abstract. Use the text below exactly as written: do not rewrite, shorten, summarise or add anything. Keep every table complete, with its caption above it. Render each "[Insert Fig. X.Y]" line as an empty light-grey box, full text width and about 7 cm tall, with the figure caption centred on the line below it. I will add the images later.
 
 ---
 
