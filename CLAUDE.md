@@ -70,10 +70,19 @@ pass cleanly.
    Never build SQL with f-strings, `%` formatting or concatenation from user input.
 3. **All database access goes through `app/db.py`**, so the SQL Inspector panel can log every
    statement, its parameters and its timing.
-4. **Naming:** lowercase `snake_case` for every table and column, because Windows MySQL ignores name
-   case and Linux MySQL doesn't. Prefixes: `sp_` procedures, `fn_` functions, `trg_` triggers,
-   `v_` views, `idx_` indexes, `fk_` foreign keys, `chk_` check constraints. Parameters use `p_`
-   and local variables use `v_`.
+4. **Naming** (agreed, so don't change it without both people agreeing):
+   - Lowercase `snake_case` for every table and column, because Windows MySQL ignores name case and
+     Linux MySQL doesn't.
+   - Tables are **plural** (`students`, `enrollments`).
+   - Primary keys are `<singular>_id` (`student_id`, `section_id`), and every foreign key uses the
+     **same name** as the key it points to. The exception is a second FK to the same table, which
+     gets a role name (`prereq_course_id`).
+   - Timestamps end in `_at` and say what happened (`enrolled_at`, `requested_at`, `logged_at`).
+   - Days of the week are `ENUM('MON','TUE','WED','THU','FRI','SAT')`.
+   - Every constraint and index is named explicitly: `fk_<table>_<target>`, `uq_<table>_<cols>`,
+     `chk_<table>_<rule>`, `idx_<table>_<cols>`.
+   - Routines and views: `sp_` procedures, `fn_` functions, `trg_` triggers, `v_` views.
+     Parameters use `p_` and local variables use `v_`.
 5. **MySQL 8.0 syntax only.** No 8.4-only features.
 6. **SQL files:** any file with routines or triggers uses `DELIMITER $$ ... $$ DELIMITER ;` and must
    load with the plain `mysql` CLI, because that's the same command on both machines. Each file is
