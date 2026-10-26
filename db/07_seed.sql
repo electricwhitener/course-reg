@@ -111,27 +111,31 @@ INSERT INTO section_meetings (section_id, day, start_time, end_time) VALUES
   (14, 'SAT', '10:00', '11:30');
 
 -- Explicit timestamps: rows in one INSERT would otherwise all get the same CURRENT_TIMESTAMP.
+-- Dates are relative to the reset day (12 to 8 days ago), so the demo data never ages past
+-- the waitlist expiry event and the activity chart always shows recent days.
+SET @seed_day = CURRENT_DATE - INTERVAL 12 DAY;
+
 INSERT INTO enrollments (student_id, section_id, enrolled_at) VALUES
-  (1,  9,  '2026-10-12 09:05:00'),
-  (2,  9,  '2026-10-12 09:20:00'),
-  (3,  8,  '2026-10-12 10:00:00'), (3, 3, '2026-10-12 10:02:00'),
-  (4,  1,  '2026-10-12 11:15:00'), (4, 6, '2026-10-12 11:18:00'),
-  (5,  3,  '2026-10-13 09:00:00'), (5, 9, '2026-10-13 09:03:00'),
-  (6,  12, '2026-10-13 10:30:00'), (6, 11, '2026-10-13 10:31:00'),
-  (7,  12, '2026-10-13 10:45:00'), (7, 8, '2026-10-13 10:47:00'),
-  (8,  7,  '2026-10-14 14:00:00'),
-  (9,  14, '2026-10-14 15:10:00'), (9, 2, '2026-10-14 15:12:00'),
-  (10, 14, '2026-10-14 15:30:00'), (10, 9, '2026-10-14 15:32:00'),
-  (11, 14, '2026-10-15 08:50:00'), (11, 1, '2026-10-15 08:52:00'),
-  (12, 13, '2026-10-15 12:00:00'),
-  (13, 10, '2026-10-16 09:40:00'),
-  (14, 10, '2026-10-16 09:55:00'),
-  (15, 2,  '2026-10-16 16:20:00'), (15, 7, '2026-10-16 16:22:00');
+  (1,  9,  TIMESTAMP(@seed_day + INTERVAL 0 DAY, '09:05:00')),
+  (2,  9,  TIMESTAMP(@seed_day + INTERVAL 0 DAY, '09:20:00')),
+  (3,  8,  TIMESTAMP(@seed_day + INTERVAL 0 DAY, '10:00:00')), (3, 3, TIMESTAMP(@seed_day + INTERVAL 0 DAY, '10:02:00')),
+  (4,  1,  TIMESTAMP(@seed_day + INTERVAL 0 DAY, '11:15:00')), (4, 6, TIMESTAMP(@seed_day + INTERVAL 0 DAY, '11:18:00')),
+  (5,  3,  TIMESTAMP(@seed_day + INTERVAL 1 DAY, '09:00:00')), (5, 9, TIMESTAMP(@seed_day + INTERVAL 1 DAY, '09:03:00')),
+  (6,  12, TIMESTAMP(@seed_day + INTERVAL 1 DAY, '10:30:00')), (6, 11, TIMESTAMP(@seed_day + INTERVAL 1 DAY, '10:31:00')),
+  (7,  12, TIMESTAMP(@seed_day + INTERVAL 1 DAY, '10:45:00')), (7, 8, TIMESTAMP(@seed_day + INTERVAL 1 DAY, '10:47:00')),
+  (8,  7,  TIMESTAMP(@seed_day + INTERVAL 2 DAY, '14:00:00')),
+  (9,  14, TIMESTAMP(@seed_day + INTERVAL 2 DAY, '15:10:00')), (9, 2, TIMESTAMP(@seed_day + INTERVAL 2 DAY, '15:12:00')),
+  (10, 14, TIMESTAMP(@seed_day + INTERVAL 2 DAY, '15:30:00')), (10, 9, TIMESTAMP(@seed_day + INTERVAL 2 DAY, '15:32:00')),
+  (11, 14, TIMESTAMP(@seed_day + INTERVAL 3 DAY, '08:50:00')), (11, 1, TIMESTAMP(@seed_day + INTERVAL 3 DAY, '08:52:00')),
+  (12, 13, TIMESTAMP(@seed_day + INTERVAL 3 DAY, '12:00:00')),
+  (13, 10, TIMESTAMP(@seed_day + INTERVAL 4 DAY, '09:40:00')),
+  (14, 10, TIMESTAMP(@seed_day + INTERVAL 4 DAY, '09:55:00')),
+  (15, 2,  TIMESTAMP(@seed_day + INTERVAL 4 DAY, '16:20:00')), (15, 7, TIMESTAMP(@seed_day + INTERVAL 4 DAY, '16:22:00'));
 
 -- Order of requested_at = order of promotion (first come, first served).
 INSERT INTO waitlist (student_id, section_id, requested_at) VALUES
-  (8,  12, '2026-10-14 14:05:00'),
-  (9,  12, '2026-10-14 15:15:00'),
-  (12, 14, '2026-10-15 12:05:00'),
-  (13, 14, '2026-10-16 09:45:00'),
-  (14, 14, '2026-10-16 10:00:00');
+  (8,  12, TIMESTAMP(@seed_day + INTERVAL 2 DAY, '14:05:00')),
+  (9,  12, TIMESTAMP(@seed_day + INTERVAL 2 DAY, '15:15:00')),
+  (12, 14, TIMESTAMP(@seed_day + INTERVAL 3 DAY, '12:05:00')),
+  (13, 14, TIMESTAMP(@seed_day + INTERVAL 4 DAY, '09:45:00')),
+  (14, 14, TIMESTAMP(@seed_day + INTERVAL 4 DAY, '10:00:00'));

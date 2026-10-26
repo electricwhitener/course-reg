@@ -103,7 +103,7 @@ CREATE TABLE waitlist (
 -- No foreign keys on purpose: the log must keep its history even if a student or section is removed.
 CREATE TABLE audit_log (
   log_id     INT AUTO_INCREMENT PRIMARY KEY,
-  action     ENUM('ENROLL', 'DROP', 'WAITLIST', 'PROMOTE', 'REJECT') NOT NULL,
+  action     ENUM('ENROLL', 'DROP', 'WAITLIST', 'PROMOTE', 'REJECT', 'EXPIRE') NOT NULL,
   student_id INT,
   section_id INT,
   details    VARCHAR(255),
