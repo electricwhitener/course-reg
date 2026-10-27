@@ -31,7 +31,10 @@
 
       <div class="cr-links">
         <a class="cr-link {% if request.endpoint == 'catalog' %}active{% endif %}" href="{{ url_for('catalog') }}">Catalog</a>
-        {# Add Schedule, Admin, Race Arena, Analytics, Isolation Lab here as their pages are built. #}
+        <a class="cr-link {% if request.endpoint == 'schedule' %}active{% endif %}" href="{{ url_for('schedule') }}">Schedule</a>
+        <a class="cr-link {% if request.endpoint == 'admin' %}active{% endif %}" href="{{ url_for('admin') }}">Admin</a>
+        <a class="cr-link {% if request.endpoint == 'race_arena' %}active{% endif %}" href="{{ url_for('race_arena') }}">Race Arena</a>
+        {# Add Analytics and Isolation Lab here as their pages are built. #}
       </div>
 
       <div class="cr-nav-right">

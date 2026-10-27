@@ -167,25 +167,49 @@ ORDER BY dept_name, dept_rank;
 department. MA102 is rank 1 in Mathematics, and CS301 and CS302 share rank 3.
 **Capture:** from `mysql> SELECT` to `10 rows in set`. Then type `exit` and run `bash db/reset.sh`.
 
-## D. Web page screenshots (you can do 5.1 and 5.2 now)
+## D. Web page screenshots
+The pages were redesigned (Bhavya's new look plus the Schedule, Admin and Race Arena pages), so take
+or retake all of these from the current `main`.
+
 1. In the terminal: `bash db/reset.sh`, then `flask --app app/app.py run --debug`.
-2. Open **http://localhost:5000** in your Windows browser. Press **Ctrl + −** once or twice so more
-   cards fit on screen.
+2. Open **http://localhost:5000** in your Windows browser. Use the moon/sun button in the navbar to
+   pick light mode, since it prints better.
 
 ### Fig. 5.1: catalog → `fig-5-01.png`
-**Capture:** the navigation bar (with "Login as") and the first two or three rows of section cards.
+In **Login as** (top right) choose **3. Kabir Singh**. Capture the whole window: the navbar, the dark
+header with the "your registration" panel, and the first row of section cards.
 
 ### Fig. 5.2 (a): success message → `fig-5-02a.png`
 1. In **Login as**, choose **1. Aarav Sharma**.
-2. Find the **CS302-A** card (Database Systems) and click **Register**.
-3. **Immediately** press **Win + Shift + S**. The message disappears after 4 seconds, but the screen
-   freezes the moment you press the keys.
-4. Capture the green message "Enrolled in CS302-A." together with the CS302-A card, whose bar is now red (full).
+2. Type **CS302** in the search box, then click **Register** on the CS302-A card.
+3. **Immediately** press **Win + Shift + S**. The message disappears after about 4 seconds, but the
+   screen freezes the moment you press the keys.
+4. Capture the green "Enrolled in CS302-A." message together with the CS302-A card.
 
 ### Fig. 5.2 (b): rejection message → `fig-5-02b.png`
-1. Choose **4. Ananya Gupta** in **Login as**.
-2. On the **CS201-A** card (Data Structures), click **Register**, then immediately **Win + Shift + S**.
-3. Capture the red message "Missing prerequisite: CS101."
+1. Choose **4. Ananya Gupta** in **Login as**, and search **CS201**.
+2. Click **Register** on CS201-A, then immediately **Win + Shift + S**.
+3. Capture the red "Missing prerequisite: CS101." message with the card.
+
+Run `bash db/reset.sh` before the next figure.
+
+### Fig. 5.3: schedule → `fig-5-03.png`
+**Login as 3. Kabir Singh**, open **Schedule**. Capture the weekly grid and the panel on the right
+(credits 8 / 20, CS201-A and MA102-A).
+
+### Fig. 5.4: admin → `fig-5-04.png`
+Open **Admin**. In the **MA102-B** row, change capacity **3** to **5** and click **Set**. Within 4
+seconds press **Win + Shift + S** and capture the page with the message "…2 students were promoted
+from the waitlist" and the two new **PROMOTE** rows at the top of the audit log. Then run
+`bash db/reset.sh`.
+
+### Fig. 5.5: Race Arena → `fig-5-05.png`
+Open **Race Arena**. Leave CS302-A, Aarav Sharma and Diya Patel selected.
+1. Warm-up: press **Race!** once in **Unsafe** mode (the first race after starting the server can be
+   a little slow).
+2. Click **Safe · FOR UPDATE**, press **Race!**, and wait about 4 seconds for the result.
+3. Capture from the green **"1 enrolled · 1 waitlisted"** banner down: both timelines (one student's
+   striped "waiting for lock" bar) and the lock monitor (one lock GRANTED, one WAITING).
 
 Then press **Ctrl + C** in the terminal to stop the server, and run `bash db/reset.sh`.
 
@@ -194,7 +218,6 @@ Then press **Ctrl + C** in the terminal to stop the server, and run `bash db/res
 |---|---|
 | 2.1 ER diagram | Claude Design draws it from `claude-design/09-er-diagram.md` |
 | 2.2 Schema diagram | Claude Design draws it from `claude-design/10-schema-diagram.md`. If Bhavya later exports one from MySQL Workbench (**Database → Reverse Engineer**, then **File → Export → Export as PNG**), you can swap it in |
-| 5.3 Timetable, 5.4 Admin, 5.5 Race Arena | Bhavya's pages: capture them once they exist, the same way as 5.1 |
 
 ## F. Putting a screenshot into Claude Design
 Attach the image file (the paperclip / attach button, or drag the file into the message box), and send:

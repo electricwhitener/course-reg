@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Schedule · Course Registration{% endblock %}
+
+{% block content %}
+<section class="cr-hero cr-hero-sm">
+  <div class="container">
+    <span class="cr-eyebrow"><span class="cr-live-dot"></span>From <span class="mono">v_student_timetable</span> · clashes can't happen here</span>
+    <h1>Your week, <span class="cr-gradient-text" id="hero-name">…</span></h1>
+    <p class="cr-hero-sub">Every class you hold a seat in, placed on the week. MySQL rejects any registration that
+      would overlap one of these blocks, so the grid never shows two classes at once.</p>
+  </div>
+</section>
+
+<div class="container cr-page">
+  <div class="cr-split">
+    <div class="cr-panel cr-week-panel">
+      <div class="cr-panel-head">
+        <h2>Weekly timetable</h2>
+        <span class="cr-results-meta" id="week-meta"></span>
+      </div>
+      <div class="cr-week-scroll">
+        <div class="cr-week" id="week"></div>
+      </div>
+    </div>
+
+    <aside class="cr-side">
+      <div class="cr-panel">
+        <div class="cr-panel-head"><h2>Credits</h2><span class="cr-results-meta" id="credit-meta"></span></div>
+        <div class="cr-credit-big"><strong id="credits">0</strong><span> / <span id="max-credits">0</span></span></div>
+        <div class="cr-meter"><div id="credit-fill" style="width: 0%"></div></div>
+      </div>
+      <div class="cr-panel">
+        <div class="cr-panel-head"><h2>Enrolled</h2></div>
+        <div class="cr-list" id="enrolled-list"></div>
+      </div>
+      <div class="cr-panel">
+        <div class="cr-panel-head"><h2>Waitlists</h2></div>
+        <div class="cr-list" id="waitlist-list"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const DAY_LABELS = { MON: "Monday", TUE: "Tuesday", WED: "Wednesday", THU: "Thursday", FRI: "Friday", SAT: "Saturday" };
+  const FIRST_HOUR = 9, LAST_HOUR = 17, HOUR_PX = 72;
+  const DEPT_COLORS = ["#4651f5", "#0ea58a", "#a855f7", "#f97316", "#ec4899"];
+
+  const state = { sections: [], timetable: [], waitlist: [], signature: "" };
+
+  const minutes = (hhmm) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+  const deptOf = (code) => code.replace(/\d.*$/, "");
+  // Same colour per department as the catalog: its order among all departments, sorted.
+  const deptColor = (code) => {
+    const depts = [...new Set(state.sections.map((s) => deptOf(s.course_code)))].sort();
+    return DEPT_COLORS[Math.max(depts.indexOf(deptOf(code)), 0) % DEPT_COLORS.length];
+  };
+  const sectionById = (id) => state.sections.find((s) => s.section_id === id);
+
+  function renderWeek() {
+    const hours = [];
+    for (let h = FIRST_HOUR; h <= LAST_HOUR; h++) hours.push(h);
+    const height = (LAST_HOUR - FIRST_HOUR) * HOUR_PX;
+
+    let html = `<div class="cr-week-corner"></div>` +
+      DAYS.map((d) => `<div class="cr-week-day"><span>${DAY_LABELS[d].slice(0, 3)}</span></div>`).join("");
+    html += `<div class="cr-week-times" style="height: ${height}px">` +
+      hours.map((h) => `<span style="top: ${(h - FIRST_HOUR) * HOUR_PX}px">${String(h).padStart(2, "0")}:00</span>`).join("") +
+      `</div>`;
+
+    for (const day of DAYS) {
+      const blocks = state.timetable.filter((row) => row.day === day).map((row) => {
+        const top = (minutes(row.start_time) - FIRST_HOUR * 60) / 60 * HOUR_PX;
+        const h = (minutes(row.end_time) - minutes(row.start_time)) / 60 * HOUR_PX;
+        return `<div class="cr-block" style="top: ${top}px; height: ${h - 4}px; --dept: ${deptColor(row.course_code)}">
+            <span class="cr-block-code mono">${esc(row.course_code)}-${esc(row.section_code)}</span>
+            <span class="cr-block-title">${esc(row.course_title)}</span>
+            <span class="cr-block-meta">${esc(row.start_time)}–${esc(row.end_time)} · ${esc(row.room)}</span>
+          </div>`;
+      }).join("");
+      html += `<div class="cr-week-col" style="height: ${height}px; --hour: ${HOUR_PX}px">${blocks}</div>`;
+    }
+    document.getElementById("week").innerHTML = html;
+
+    const classes = state.timetable.length;
+    document.getElementById("week-meta").textContent = classes
+      ? `${classes} class${classes === 1 ? "" : "es"} a week`
+      : "No classes yet";
+  }
+
+  function dropButton(sectionId, label) {
+    return `<button class="cr-btn cr-btn-ghost cr-btn-sm" data-action="drop" data-section="${sectionId}">${label}</button>`;
+  }
+
+  function renderSide() {
+    const student = studentById(currentStudent());
+    if (!student) return;
+    document.getElementById("hero-name").textContent = student.name.split(" ")[0];
+
+    const enrolledIds = [...new Set(state.timetable.map((row) => row.section_id))];
+    const credits = enrolledIds.reduce((sum, id) => sum + (sectionById(id)?.credits || 0), 0);
+    document.getElementById("credits").textContent = credits;
+    document.getElementById("max-credits").textContent = student.max_credits;
+    document.getElementById("credit-meta").textContent = `${Math.max(student.max_credits - credits, 0)} left`;
+    document.getElementById("credit-fill").style.width = `${Math.min(credits / student.max_credits * 100, 100)}%`;
+
+    document.getElementById("enrolled-list").innerHTML = enrolledIds.length
+      ? enrolledIds.map((id) => {
+          const s = sectionById(id);
+          const meetings = state.timetable.filter((row) => row.section_id === id);
+          const when = meetings.map((m) => DAY_LABELS[m.day].slice(0, 3)).join(" · ") +
+            (meetings.length ? ` ${meetings[0].start_time}–${meetings[0].end_time}` : "");
+          return `<div class="cr-list-item" style="--dept: ${deptColor(s.course_code)}">
+              <div><div class="cr-list-title"><span class="mono">${esc(s.course_code)}-${esc(s.section_code)}</span> ${esc(s.course_title)}</div>
+                <div class="cr-list-sub">${esc(when)} · ${s.credits} cr</div></div>
+              ${dropButton(id, "Drop")}
+            </div>`;
+        }).join("")
+      : `<div class="cr-list-empty">No seats yet. Register from the catalog.</div>`;
+
+    document.getElementById("waitlist-list").innerHTML = state.waitlist.length
+      ? state.waitlist.map((w) => `<div class="cr-list-item" style="--dept: ${deptColor(w.course_code)}">
+              <div><div class="cr-list-title"><span class="mono">${esc(w.course_code)}-${esc(w.section_code)}</span> ${esc(w.course_title)}</div>
+                <div class="cr-list-sub">Position <strong>#${w.position}</strong> in line</div></div>
+              ${dropButton(w.section_id, "Leave")}
+            </div>`).join("")
+      : `<div class="cr-list-empty">You're not waiting for any section.</div>`;
+  }
+
+  async function load() {
+    const studentId = currentStudent();
+    try {
+      const [sections, timetable, waitlist] = await Promise.all([
+        api("/api/sections"),
+        api(`/api/students/${studentId}/timetable`),
+        api(`/api/students/${studentId}/waitlist`),
+      ]);
+      if (studentId !== currentStudent()) return;
+      const signature = JSON.stringify([studentId, sections, timetable, waitlist]);
+      if (signature === state.signature) return;
+      Object.assign(state, { sections, timetable, waitlist, signature });
+      renderWeek();
+      renderSide();
+    } catch (err) {
+      toast(err.message, "danger");
+    }
+  }
+
+  // Drop / leave, with the same second-click confirmation as the catalog.
+  document.querySelector(".cr-side").addEventListener("click", async (e) => {
+    const button = e.target.closest("button[data-action='drop']");
+    if (!button) return;
+    if (!button.classList.contains("is-confirming")) {
+      button.classList.add("is-confirming");
+      button.dataset.label = button.textContent;
+      button.textContent = "Confirm?";
+      setTimeout(() => { button.classList.remove("is-confirming"); button.textContent = button.dataset.label; }, 3000);
+      return;
+    }
+    const sectionId = Number(button.dataset.section);
+    const s = sectionById(sectionId);
+    const leaving = state.waitlist.some((w) => w.section_id === sectionId);
+    button.disabled = true;
+    button.innerHTML = `<span class="cr-spinner"></span>`;
+    try {
+      await api("/api/drop", { method: "POST", body: { student_id: currentStudent(), section_id: sectionId } });
+      toast(leaving ? `Left the waitlist for ${s.course_code}-${s.section_code}.` : `Dropped ${s.course_code}-${s.section_code}.`, "info");
+    } catch (err) {
+      toast(err.message, "danger");
+    }
+    state.signature = "";
+    load();
+  });
+
+  document.addEventListener("student-changed", () => { state.signature = ""; load(); });
+  studentsReady.then(() => { load(); setInterval(load, 3000); }).catch((err) => toast(err.message, "danger"));
+</script>
+{% endblock %}
