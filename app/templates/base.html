@@ -4,34 +4,62 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Course Registration{% endblock %}</title>
+  <script>
+    // Apply the saved (or system) theme before first paint, so dark mode never flashes white.
+    (function () {
+      var theme = null;
+      try { theme = localStorage.getItem("theme"); } catch (_) {}
+      if (!theme) theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.setAttribute("data-bs-theme", theme);
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
 </head>
 <body>
-  <nav class="navbar navbar-expand-md navbar-dark bg-dark">
-    <div class="container">
-      <a class="navbar-brand fw-semibold" href="{{ url_for('catalog') }}">Course Registration</a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="nav">
-        <ul class="navbar-nav me-auto">
-          <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'catalog' %}active{% endif %}" href="{{ url_for('catalog') }}">Catalog</a>
-          </li>
-          {# Add Schedule, Admin, Race Arena, Analytics, Isolation Lab here as their pages are built. #}
-        </ul>
-        <div class="d-flex align-items-center gap-2">
-          <label for="student-switcher" class="text-light small text-nowrap">Login as</label>
-          <select id="student-switcher" class="form-select form-select-sm"></select>
+  <nav class="cr-nav">
+    <div class="container cr-nav-inner">
+      <a class="cr-brand" href="{{ url_for('catalog') }}">
+        <span class="cr-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/></svg>
+        </span>
+        <span>Course<span class="cr-brand-accent">Reg</span></span>
+      </a>
+
+      <div class="cr-links">
+        <a class="cr-link {% if request.endpoint == 'catalog' %}active{% endif %}" href="{{ url_for('catalog') }}">Catalog</a>
+        {# Add Schedule, Admin, Race Arena, Analytics, Isolation Lab here as their pages are built. #}
+      </div>
+
+      <div class="cr-nav-right">
+        <span class="cr-db-status" id="db-status"><span class="cr-dot"></span><span class="cr-db-label">Connecting…</span></span>
+        <button type="button" class="cr-icon-btn" id="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <div class="cr-user">
+          <span class="cr-avatar" id="student-avatar" aria-hidden="true"></span>
+          <div class="cr-user-select">
+            <label for="student-switcher" class="cr-user-label">Login as</label>
+            <select id="student-switcher" class="cr-select"></select>
+          </div>
         </div>
       </div>
     </div>
   </nav>
 
-  <main class="container py-4">
+  <main>
     {% block content %}{% endblock %}
   </main>
+
+  <footer class="cr-footer">
+    <div class="container">
+      Every seat, waitlist and rule lives in MySQL: stored procedures, triggers and row locks.
+    </div>
+  </footer>
 
   <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toasts"></div>
 

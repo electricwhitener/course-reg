@@ -52,8 +52,8 @@ interface on top that only calls the database's procedures.
 
 | Item | Member 1 (Eknoor Brar) | Member 2 (Bhavya Ransiwal) | Minimum needed |
 |---|---|---|---|
-| Laptop | Acer Predator PHN16-71 | (to be added) | – |
-| Processor | Intel Core i7-13700HX (16 cores, 24 threads) | (to be added) | Any 64-bit dual-core |
-| RAM | 16 GB | (to be added) | 4 GB |
-| Storage | 1 TB SSD | (to be added) | 2 GB free |
-| Operating system | Windows 11 Home, with Ubuntu 24.04 on WSL2 | (to be added) | Windows 10/11 or Linux |
+| Machine | Acer Predator PHN16-71 laptop | Desktop PC | – |
+| Processor | Intel Core i7-13700HX (16 cores, 24 threads) | Intel Core i9-14900K (24 cores, 32 threads) | Any 64-bit dual-core |
+| RAM | 16 GB | 32 GB | 4 GB |
+| Storage | 1 TB SSD | 2 TB SSD | 2 GB free |
+| Operating system | Windows 11 Home, with Ubuntu 24.04 on WSL2 | Windows 11 Pro | Windows 10/11 or Linux |
