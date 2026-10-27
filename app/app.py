@@ -65,6 +65,21 @@ def catalog():
     return render_template("catalog.html")
 
 
+@app.route("/schedule")
+def schedule():
+    return render_template("schedule.html")
+
+
+@app.route("/admin")
+def admin():
+    return render_template("admin.html")
+
+
+@app.route("/race")
+def race_arena():
+    return render_template("race.html")
+
+
 # Students, catalog, schedule -------------------------------------------------------------------
 
 @app.get("/api/health")

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Admin · Course Registration{% endblock %}
+
+{% block content %}
+<section class="cr-hero cr-hero-sm">
+  <div class="container">
+    <span class="cr-eyebrow"><span class="cr-live-dot"></span>Capacity changes run <span class="mono">sp_set_capacity</span> · log written by triggers</span>
+    <h1>Admin <span class="cr-gradient-text">console</span></h1>
+    <p class="cr-hero-sub">Raise a section's capacity and a cursor in MySQL walks its waitlist in order, promoting
+      students into the new seats. Every change lands in the audit log on the right.
+      Try MA102-B: raise it from 3 to 5.</p>
+  </div>
+</section>
+
+<div class="container cr-page">
+  <div class="cr-split cr-split-wide">
+    <div class="cr-panel">
+      <div class="cr-panel-head">
+        <h2>Sections and capacity</h2>
+        <span class="cr-results-meta" id="sections-meta"></span>
+      </div>
+      <div class="cr-table-wrap">
+        <table class="cr-table">
+          <thead>
+            <tr><th>Section</th><th>Seats</th><th class="cr-num">Waiting</th><th>Capacity</th></tr>
+          </thead>
+          <tbody id="sections-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="cr-panel">
+      <div class="cr-panel-head">
+        <h2>Audit log</h2>
+        <span class="cr-results-meta"><span class="cr-live-dot cr-live-dot-sm"></span> live</span>
+      </div>
+      <div class="cr-feed" id="feed"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const ACTION_TONE = { ENROLL: "ok", PROMOTE: "accent", WAITLIST: "warn", DROP: "muted", REJECT: "full", EXPIRE: "muted" };
+  const state = { sections: [], sectionsSig: "", lastLogId: null };
+
+  function tone(s) { return s.fill_pct > 100 ? "over" : s.fill_pct >= 100 ? "full" : s.fill_pct >= 67 ? "warn" : "ok"; }
+
+  function renderSections() {
+    const rows = state.sections.map((s) => `
+      <tr>
+        <td><span class="mono cr-strong">${esc(s.course_code)}-${esc(s.section_code)}</span>
+          <div class="cr-list-sub">${esc(s.course_title)}</div></td>
+        <td class="cr-seats-cell">
+          <div class="cr-meter cr-meter-sm tone-${tone(s)}"><div style="width: ${Math.min(s.fill_pct, 100)}%"></div></div>
+          <span class="cr-list-sub">${s.enrolled}/${s.capacity}${s.seats_left < 0 ? " · overbooked" : ""}</span>
+        </td>
+        <td class="cr-num">${s.waitlist_len || "–"}</td>
+        <td>
+          <form class="cr-cap-form" data-section="${s.section_id}">
+            <input class="cr-input" type="number" min="1" max="500" value="${s.capacity}" aria-label="New capacity for ${esc(s.course_code)}-${esc(s.section_code)}">
+            <button class="cr-btn cr-btn-primary cr-btn-sm" type="submit">Set</button>
+          </form>
+        </td>
+      </tr>`).join("");
+    document.getElementById("sections-body").innerHTML = rows;
+    const waiting = state.sections.reduce((sum, s) => sum + s.waitlist_len, 0);
+    document.getElementById("sections-meta").textContent = `${state.sections.length} sections · ${waiting} waiting`;
+  }
+
+  function when(iso) {
+    const d = new Date(iso.slice(0, 19));
+    return d.toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  function renderFeed(rows) {
+    const previous = state.lastLogId;
+    document.getElementById("feed").innerHTML = rows.length ? rows.map((r) => `
+      <div class="cr-feed-item ${previous !== null && r.log_id > previous ? "cr-feed-new" : ""}">
+        <span class="cr-badge tone-${ACTION_TONE[r.action] || "muted"}">${esc(r.action)}</span>
+        <div class="cr-feed-body">
+          <div><strong>${esc(r.student_name || `Student ${r.student_id}`)}</strong>
+            <span class="mono">${esc(r.section_label || "")}</span></div>
+          ${r.details ? `<div class="cr-list-sub">${esc(r.details)}</div>` : ""}
+        </div>
+        <span class="cr-feed-time">${esc(when(r.logged_at))}</span>
+      </div>`).join("") : `<div class="cr-list-empty">No events yet.</div>`;
+    if (rows.length) state.lastLogId = rows[0].log_id;
+  }
+
+  async function loadSections(force = false) {
+    const sections = await api("/api/sections");
+    const sig = JSON.stringify(sections);
+    // Don't rebuild the table under the admin's cursor unless something changed.
+    if (!force && sig === state.sectionsSig) return;
+    state.sections = sections;
+    if (!force && document.activeElement && document.activeElement.classList.contains("cr-input")) return;
+    state.sectionsSig = sig;
+    renderSections();
+  }
+
+  async function loadFeed() {
+    renderFeed(await api("/api/admin/audit?limit=40"));
+  }
+
+  document.getElementById("sections-body").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const sectionId = Number(form.dataset.section);
+    const capacity = Number(form.querySelector("input").value);
+    const before = state.sections.find((s) => s.section_id === sectionId);
+    const button = form.querySelector("button");
+    button.disabled = true;
+    button.innerHTML = `<span class="cr-spinner"></span>`;
+    try {
+      await api("/api/admin/capacity", { method: "POST", body: { section_id: sectionId, capacity } });
+      await loadSections(true);
+      const after = state.sections.find((s) => s.section_id === sectionId);
+      const promoted = after.enrolled - before.enrolled;
+      toast(`${after.course_code}-${after.section_code} now has ${capacity} seats.` +
+        (promoted > 0 ? ` ${promoted} student${promoted === 1 ? " was" : "s were"} promoted from the waitlist.` : ""),
+        promoted > 0 ? "success" : "info");
+    } catch (err) {
+      toast(err.message, "danger");
+      await loadSections(true);
+    }
+    loadFeed();
+  });
+
+  async function refresh() {
+    try {
+      await Promise.all([loadSections(), loadFeed()]);
+    } catch (err) {
+      toast(err.message, "danger");
+    }
+  }
+  refresh();
+  setInterval(refresh, 3000);
+</script>
+{% endblock %}

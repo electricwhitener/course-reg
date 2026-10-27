@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}Race Arena · Course Registration{% endblock %}
+
+{% block content %}
+<section class="cr-hero cr-hero-sm">
+  <div class="container">
+    <span class="cr-eyebrow"><span class="cr-live-dot"></span>Two connections · one seat · <span class="mono">SELECT … FOR UPDATE</span></span>
+    <h1>Race <span class="cr-gradient-text">Arena</span></h1>
+    <p class="cr-hero-sub">Two students register for the last seat at the same moment, each on its own database
+      connection. Without a lock both read "1 seat left" and both get in. With <span class="mono">FOR UPDATE</span>
+      the second one waits for the first, then sees the section is full.</p>
+  </div>
+</section>
+
+<div class="container cr-page">
+  <div class="cr-panel cr-race-controls">
+    <label class="cr-field"><span>Section</span><select class="cr-input" id="section"></select></label>
+    <label class="cr-field"><span>Student A</span><select class="cr-input" id="student-a"></select></label>
+    <label class="cr-field"><span>Student B</span><select class="cr-input" id="student-b"></select></label>
+    <div class="cr-field"><span>Mode</span>
+      <div class="cr-segmented" id="mode" role="group" aria-label="Locking mode">
+        <button type="button" data-safe="false" class="active">Unsafe</button>
+        <button type="button" data-safe="true">Safe · FOR UPDATE</button>
+      </div>
+    </div>
+    <label class="cr-field cr-field-sm"><span>Delay</span>
+      <select class="cr-input" id="delay"><option value="1">1 s</option><option value="2" selected>2 s</option><option value="3">3 s</option></select>
+    </label>
+    <div class="cr-race-buttons">
+      <button class="cr-btn cr-btn-primary" id="go">Race!</button>
+      <button class="cr-btn cr-btn-ghost cr-btn-neutral" id="reset" title="Empty this section's seats and waitlist">Reset section</button>
+    </div>
+  </div>
+
+  <div class="cr-banner" id="banner" hidden></div>
+
+  <div class="cr-split cr-split-race">
+    <div class="cr-panel">
+      <div class="cr-panel-head"><h2>Transaction timelines</h2><span class="cr-results-meta" id="elapsed"></span></div>
+      <div id="timeline">
+        <div class="cr-list-empty">Pick two students and press <strong>Race!</strong> Each bar shows one
+          transaction from START to COMMIT on a shared clock.</div>
+      </div>
+      <div class="cr-legend">
+        <span><i class="seg-wait"></i>Waiting for lock</span>
+        <span><i class="seg-check"></i>Rule checks + seat count</span>
+        <span><i class="seg-window"></i>Race window (delay) + insert</span>
+        <span><i class="seg-commit"></i>Commit</span>
+        <span><i class="seg-reject"></i>Rejected</span>
+      </div>
+    </div>
+
+    <div class="cr-panel">
+      <div class="cr-panel-head"><h2>Lock monitor</h2><span class="cr-results-meta" id="locks-meta">reads <span class="mono">v_lock_monitor</span></span></div>
+      <div class="cr-table-wrap">
+        <table class="cr-table">
+          <thead><tr><th>Student</th><th>Lock</th><th>Row</th><th>Status</th><th>Waiting for</th></tr></thead>
+          <tbody id="locks"><tr><td colspan="5" class="cr-list-empty">No locks held right now.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const state = { sections: [], safe: false, running: false, snapshots: [], startedAt: 0 };
+  const STATUS_TONE = { ENROLLED: "ok", WAITLISTED: "warn", REJECTED: "full" };
+
+  // "2026-10-27T15:14:05.123456" → seconds since midnight, keeping the microseconds.
+  function secs(iso) {
+    if (!iso) return null;
+    const [h, m, s] = iso.split("T")[1].split(":");
+    return Number(h) * 3600 + Number(m) * 60 + parseFloat(s);
+  }
+  const studentName = (id) => (studentById(id)?.name) || `Student ${id}`;
+  const sectionLabel = (id) => {
+    const s = state.sections.find((x) => String(x.section_id) === String(id));
+    return s ? `${s.course_code}-${s.section_code}` : `section ${id}`;
+  };
+
+  function fillSelects() {
+    const sectionSel = document.getElementById("section");
+    sectionSel.innerHTML = state.sections.map((s) =>
+      `<option value="${s.section_id}">${esc(s.course_code)}-${esc(s.section_code)} · ${esc(s.course_title)} (${s.capacity} seat${s.capacity === 1 ? "" : "s"})</option>`).join("");
+    sectionSel.value = "5";
+    const options = students.map((s) => `<option value="${s.student_id}">${esc(s.name)}</option>`).join("");
+    document.getElementById("student-a").innerHTML = options;
+    document.getElementById("student-b").innerHTML = options;
+    document.getElementById("student-a").value = "1";
+    document.getElementById("student-b").value = "2";
+  }
+
+  // Lock monitor -----------------------------------------------------------------------------------
+
+  function lockRows(rows) {
+    // Record locks on the sections table's primary key (lock_data is the section_id). Locks on its
+    // secondary index show up as "course_id, 'code', section_id" and would only add noise here.
+    return rows.filter((r) => r.table_name === "sections" && /^\d+$/.test(r.lock_data || ""));
+  }
+
+  function renderLocks(rows, note) {
+    const body = document.getElementById("locks");
+    const list = lockRows(rows);
+    body.innerHTML = list.length ? list.map((r) => {
+      const exclusive = r.lock_mode.startsWith("X");
+      const waiting = r.lock_status === "WAITING";
+      return `<tr class="${waiting ? "cr-row-wait" : ""}">
+          <td class="cr-nowrap"><strong>${esc(r.student_id ? studentName(r.student_id) : `thread ${r.thread_id}`)}</strong></td>
+          <td><span class="cr-badge tone-${exclusive ? "accent" : "muted"}">${exclusive ? "X · exclusive" : "S · shared"}</span></td>
+          <td class="mono cr-nowrap">${esc(sectionLabel(r.lock_data))}</td>
+          <td><span class="cr-badge tone-${waiting ? "warn" : "ok"}">${esc(r.lock_status)}</span></td>
+          <td>${r.blocked_by_student_id ? esc(studentName(r.blocked_by_student_id)) : "–"}</td>
+        </tr>`;
+    }).join("") : `<tr><td colspan="5" class="cr-list-empty">${note || "No locks held right now."}</td></tr>`;
+  }
+
+  async function pollLocks() {
+    try {
+      const rows = await api("/api/locks");
+      if (!state.running) return;
+      const at = (performance.now() - state.startedAt) / 1000;
+      if (lockRows(rows).length) state.snapshots.push({ at, rows });
+      renderLocks(rows);
+    } catch (_) { /* a missed poll is fine */ }
+  }
+
+  // After the race the locks are gone, so keep the most telling moment: one with a waiting lock.
+  function bestSnapshot() {
+    const waiting = state.snapshots.find((s) => lockRows(s.rows).some((r) => r.lock_status === "WAITING"));
+    if (waiting) return waiting;
+    return state.snapshots.reduce((best, s) => (!best || lockRows(s.rows).length > lockRows(best.rows).length ? s : best), null);
+  }
+
+  // Timelines --------------------------------------------------------------------------------------
+
+  function renderTimeline(results) {
+    const timed = results.filter((r) => r.timeline && r.timeline.t_begin);
+    const start = Math.min(...timed.map((r) => secs(r.timeline.t_begin)));
+    const end = Math.max(...timed.map((r) => secs(r.timeline.t_end)));
+    const total = Math.max(end - start, 0.001);
+    const pct = (t) => ((t - start) / total) * 100;
+
+    const step = total > 3 ? 1 : 0.5;
+    const ticks = [];
+    for (let t = 0; t <= total + 1e-6; t += step) ticks.push(t);
+
+    const lanes = results.map((r, i) => {
+      const who = `<div class="cr-lane-head"><span class="cr-lane-tag">${i === 0 ? "A" : "B"}</span>
+          <strong>${esc(studentName(r.student_id))}</strong>
+          <span class="cr-badge tone-${STATUS_TONE[r.status] || "full"}">${esc(r.status)}</span></div>`;
+      if (!r.timeline || !r.timeline.t_begin) {
+        return `<div class="cr-lane">${who}<div class="cr-lane-msg">${esc(r.msg)}</div></div>`;
+      }
+      const t = Object.fromEntries(Object.entries(r.timeline).map(([k, v]) => [k, secs(v)]));
+      const seg = (cls, from, to, label) => to === null || from === null ? "" :
+        `<div class="cr-seg-bar ${cls}" style="left: ${pct(from)}%; width: max(3px, ${pct(to) - pct(from)}%)" title="${label}: ${(to - from).toFixed(3)} s"></div>`;
+      const bars = t.t_counted === null
+        ? seg("seg-wait", t.t_begin, t.t_locked, "Waiting for lock") + seg("seg-reject", t.t_locked, t.t_end, "Checks, rejected")
+        : seg("seg-wait", t.t_begin, t.t_locked, "Waiting for lock") +
+          seg("seg-check", t.t_locked, t.t_counted, "Rule checks + seat count") +
+          seg("seg-window", t.t_counted, t.t_written, "Race window + insert") +
+          seg("seg-commit", t.t_written, t.t_end, "Commit");
+      const waited = t.t_locked - t.t_begin;
+      return `<div class="cr-lane">${who}
+          <div class="cr-track">${bars}</div>
+          <div class="cr-lane-msg">${esc(r.msg)}${waited >= 0.05 ? ` · waited <strong>${waited.toFixed(1)} s</strong> for the lock` : ""}</div>
+        </div>`;
+    }).join("");
+
+    const axis = `<div class="cr-axis">${ticks.map((t) =>
+      `<span style="left: ${(t / total) * 100}%">${t.toFixed(step < 1 ? 1 : 0)} s</span>`).join("")}</div>`;
+    document.getElementById("timeline").innerHTML = lanes + axis;
+    document.getElementById("elapsed").textContent = `finished in ${total.toFixed(1)} s (measured by MySQL)`;
+  }
+
+  function renderRunning(a, b) {
+    document.getElementById("timeline").innerHTML = [a, b].map((id, i) => `
+      <div class="cr-lane">
+        <div class="cr-lane-head"><span class="cr-lane-tag">${i === 0 ? "A" : "B"}</span><strong>${esc(studentName(id))}</strong>
+          <span class="cr-badge tone-muted">running</span></div>
+        <div class="cr-track cr-track-running"></div>
+      </div>`).join("");
+  }
+
+  function renderBanner(seats, results) {
+    const banner = document.getElementById("banner");
+    const over = seats.enrolled > seats.capacity;
+    const waitedFor = results.map((r) => r.timeline && r.timeline.t_locked
+      ? secs(r.timeline.t_locked) - secs(r.timeline.t_begin) : 0);
+    const longestWait = Math.max(...waitedFor);
+    let detail;
+    if (over) {
+      detail = "Both transactions read the seat count without a lock, both saw a free seat, and both inserted.";
+    } else if (state.safe && longestWait >= 0.05) {
+      detail = `The second transaction waited ${longestWait.toFixed(1)} s for the lock on the section row, then saw the seat was gone.`;
+    } else {
+      detail = "Check the messages below: a student who breaks a registration rule is rejected before any seat is counted.";
+    }
+    banner.className = `cr-banner ${over ? "is-bad" : "is-good"}`;
+    banner.innerHTML = `<div class="cr-banner-title">${over
+        ? `OVERBOOKED · ${seats.enrolled} students in ${seats.capacity} seat${seats.capacity === 1 ? "" : "s"}`
+        : `${seats.enrolled} enrolled · ${seats.waitlist_len} waitlisted`}</div>
+      <div class="cr-banner-sub">${esc(detail)}</div>`;
+    banner.hidden = false;
+  }
+
+  // Running a race ---------------------------------------------------------------------------------
+
+  async function race() {
+    const sectionId = Number(document.getElementById("section").value);
+    const a = Number(document.getElementById("student-a").value);
+    const b = Number(document.getElementById("student-b").value);
+    if (a === b) { toast("Pick two different students.", "warning"); return; }
+    const delay = Number(document.getElementById("delay").value);
+
+    const go = document.getElementById("go");
+    go.disabled = true;
+    go.innerHTML = `<span class="cr-spinner"></span> Racing…`;
+    document.getElementById("banner").hidden = true;
+    renderRunning(a, b);
+    try {
+      await api("/api/race/clear", { method: "POST", body: { section_id: sectionId } });
+      Object.assign(state, { running: true, snapshots: [], startedAt: performance.now() });
+      const poller = setInterval(pollLocks, 250);
+      const ticker = setInterval(() => {
+        document.getElementById("elapsed").textContent = `+${((performance.now() - state.startedAt) / 1000).toFixed(1)} s`;
+      }, 100);
+      let response;
+      try {
+        response = await api("/api/race", {
+          method: "POST",
+          body: { section_id: sectionId, student_ids: [a, b], safe: state.safe, delay },
+        });
+      } finally {
+        state.running = false;
+        clearInterval(poller);
+        clearInterval(ticker);
+      }
+      renderTimeline(response.results);
+      renderBanner(response.seats, response.results);
+      const best = bestSnapshot();
+      if (best) {
+        renderLocks(best.rows);
+        const raced = lockRows(best.rows).some((r) => Number(r.lock_data) === sectionId);
+        document.getElementById("locks-meta").textContent = `captured at +${best.at.toFixed(1)} s` +
+          (raced ? "" : ` · no lock on ${sectionLabel(sectionId)}`);
+      } else {
+        renderLocks([], state.safe ? "No row locks were caught this time." : "No lock on the section row: unsafe mode reads it without locking.");
+        document.getElementById("locks-meta").textContent = "after the race";
+      }
+    } catch (err) {
+      toast(err.message, "danger");
+      document.getElementById("timeline").innerHTML = `<div class="cr-list-empty">${esc(err.message)}</div>`;
+    } finally {
+      go.disabled = false;
+      go.textContent = "Race!";
+    }
+  }
+
+  document.getElementById("go").addEventListener("click", race);
+  document.getElementById("reset").addEventListener("click", async () => {
+    const sectionId = Number(document.getElementById("section").value);
+    try {
+      await api("/api/race/clear", { method: "POST", body: { section_id: sectionId } });
+      toast(`${sectionLabel(sectionId)} is empty again.`, "info");
+    } catch (err) {
+      toast(err.message, "danger");
+    }
+  });
+  document.getElementById("mode").addEventListener("click", (e) => {
+    const button = e.target.closest("button[data-safe]");
+    if (!button) return;
+    state.safe = button.dataset.safe === "true";
+    document.querySelectorAll("#mode button").forEach((b) => b.classList.toggle("active", b === button));
+  });
+
+  Promise.all([studentsReady, api("/api/sections")])
+    .then(([, sections]) => { state.sections = sections; fillSelects(); })
+    .catch((err) => toast(err.message, "danger"));
+</script>
+{% endblock %}

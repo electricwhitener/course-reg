@@ -234,40 +234,42 @@ builds only the pages: `app/templates/`, `app/static/`, and thin page routes in 
 `app/app.py` (one `render_template` route per page, plus a navbar link in `base.html`). The detailed
 design is in `docs/PLAN.md` section 5.
 
-**Already built:** `base.html` (dark navbar, "Login as" student menu remembered in localStorage,
-toast container), `catalog.html` (section cards with green/amber/red seat bars, a Register button
-that toasts MySQL's message, refresh every 2 s), and helpers in `static/app.js`: `api(path, {method,
-body})`, `currentStudent()`, a `student-changed` event, and `toast(msg, kind)`.
+**Already built:**
+- `base.html` + `static/app.js` + `static/style.css` (Bhavya's redesign): navbar with Catalog,
+  Schedule, Admin and Race Arena links, the "Login as" student menu (localStorage), a dark-mode
+  toggle, a live MySQL status badge, and toasts. Helpers: `api(path, {method, body})`, `esc(value)`
+  (always escape database text before it goes into `innerHTML`), `currentStudent()`,
+  `studentById(id)`, the `studentsReady` promise, a `student-changed` event, and `toast(msg, kind)`.
+  Colours are CSS tokens (`--cr-*`) redefined for dark mode, so new styles should use them.
+- `catalog.html`: section cards with segmented green/amber/red seat bars, search, department
+  filters, sorting, a "your registration" panel, Register / Join waitlist / Drop, refresh every 2 s.
+- `schedule.html` (`/schedule`): weekly grid MON–SAT × 09:00–17:00, credits, enrolled and waitlist
+  lists with Drop/Leave. Refreshes every 3 s and follows the "Login as" menu.
+- `admin.html` (`/admin`): section table with a capacity form per row (the toast says how many
+  students the cursor promoted) and a live audit-log feed.
+- `race.html` (`/race`): section, two students, Unsafe/Safe and delay. Runs `/api/race` while
+  polling `/api/locks`, then draws both timelines on a shared clock, keeps the lock snapshot that
+  shows a WAITING lock, and shows an OVERBOOKED or "1 enrolled · 1 waitlisted" banner. The first
+  race on a freshly started server right after `reset.sh` can run about a second slow; run one
+  warm-up race before a demo.
 
-**To build, one PR per page, in this order:**
-1. **Schedule** `/schedule`: a weekly grid (days MON–SAT × hours 09:00–17:00) from
-   `/api/students/<id>/timetable`; the student's waitlist places from `/api/students/<id>/waitlist`;
-   Drop buttons (`POST /api/drop`). It follows the "Login as" menu (`student-changed` event).
-2. **Admin** `/admin`: a capacity form (`POST /api/admin/capacity`) with the section table from
-   `/api/sections`, and the audit log feed (`/api/admin/audit`, newest first). Demo case: raise
-   MA102-B (section 14) from 3 to 5 and two waitlisted students get promoted.
-3. **Race Arena** `/race`: pick a section, two students and Unsafe/Safe. "Race!" first calls
-   `POST /api/race/clear`, then `POST /api/race` (it blocks for 2–4 s). While it runs, poll
-   `GET /api/locks` every ~300 ms (the Flask dev server handles both requests at once). Show each
-   student's timeline from its `timeline` (t_begin → t_locked = waiting for the lock → t_counted →
-   t_written → t_end), the lock table (GRANTED/WAITING, with student ids), and a banner: red
-   "OVERBOOKED 2/1" when `seats.enrolled > seats.capacity`, otherwise green "1 enrolled · 1
-   waitlisted". Defaults: section 5 (CS302-A, 1 seat) with students 1 and 2, the only pair that
-   passes every rule for it.
-4. **SQL Inspector:** a collapsible drawer on every page listing each SQL statement or CALL the last
+Jinja reads `{{` as its own tag, so never write `${{ ... }}` inside a template's JavaScript; put the
+object in a constant first.
+
+**Still to build, one PR per item:**
+1. **SQL Inspector:** a collapsible drawer on every page listing each SQL statement or CALL the last
    request ran, with its parameters and time in ms. This needs a small logging hook in the shared
    `app/db.py` (`query()` and `call()`), for example returned to the page in a response header.
    `run_race` and `run_deadlock` call the database from worker threads with no Flask request
    context, so the hook must check `flask.has_request_context()` before using `flask.g`.
-5. **Analytics** `/analytics`: Chart.js from a CDN with an exact version (e.g. `chart.js@4.4.1`).
+2. **Analytics** `/analytics`: Chart.js from a CDN with an exact version (e.g. `chart.js@4.4.1`).
    Charts: fill % by section (`/api/analytics/section_seats`), demand vs capacity
    (`course_demand`), department ranking (`course_demand`, `dept_rank`), and enrollments over time
    (`daily_activity`).
-6. **Stretch:** Isolation Lab `/isolation` (`/api/isolation/*`), and a deadlock demo button
+3. **Stretch:** Isolation Lab `/isolation` (`/api/isolation/*`), and a deadlock demo button
    (`POST /api/deadlock`).
 
-**The project report depends on the UI.** Eknoor's report shows screenshots that he takes himself
-after the pages are merged:
+**The project report depends on the UI.** Eknoor's report shows screenshots that he takes himself:
 - Fig. 5.3 is the Schedule grid, Fig. 5.4 the Admin page (capacity change + audit log), and Fig. 5.5
   the Race Arena with both timelines.
 - The report text describes the "Login as" menu and the catalog's green/amber/red seat bars that
