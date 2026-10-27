@@ -2,66 +2,354 @@
 {% block title %}Catalog · Course Registration{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-baseline mb-3">
-  <h1 class="h3 mb-0">Course catalog</h1>
-  <span class="text-body-secondary small">Seats refresh every 2 s</span>
+<section class="cr-hero">
+  <div class="container">
+    <div class="cr-hero-grid">
+      <div>
+        <span class="cr-eyebrow"><span class="cr-live-dot" id="live-dot"></span><span id="live-label">Live · seats refresh every 2 s</span></span>
+        <h1>Find your seat<br><span class="cr-gradient-text">before someone else does.</span></h1>
+        <p class="cr-hero-sub">Every seat count comes straight from MySQL and updates every two seconds.
+          Register, join a waitlist or drop a course, and watch the numbers move in real time.</p>
+        <div class="cr-stats">
+          <div class="cr-stat"><div class="cr-stat-value" id="stat-open">–</div><div class="cr-stat-label">Sections open</div></div>
+          <div class="cr-stat"><div class="cr-stat-value" id="stat-seats">–</div><div class="cr-stat-label">Seats left</div></div>
+          <div class="cr-stat"><div class="cr-stat-value" id="stat-waiting">–</div><div class="cr-stat-label">On waitlists</div></div>
+          <div class="cr-stat"><div class="cr-stat-value" id="stat-fill">–</div><div class="cr-stat-label">Seats filled</div></div>
+        </div>
+      </div>
+
+      <aside class="cr-me" aria-label="Your registration">
+        <div class="cr-me-head">
+          <span class="cr-avatar" id="me-avatar"></span>
+          <div>
+            <div class="cr-me-name" id="me-name">Loading…</div>
+            <div class="cr-me-dept" id="me-dept"></div>
+          </div>
+        </div>
+        <div class="cr-credits-row"><span>Credits this term</span><span><strong id="me-credits">0</strong> / <span id="me-max">0</span></span></div>
+        <div class="cr-credit-track"><div class="cr-credit-fill" id="me-credit-fill" style="width: 0%"></div></div>
+        <div class="cr-me-list" id="me-list"></div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<div class="cr-toolbar-wrap">
+  <div class="container">
+    <div class="cr-toolbar">
+      <label class="cr-search">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="search" type="search" placeholder="Search courses, codes or instructors" autocomplete="off" aria-label="Search sections">
+        <span class="cr-kbd">/</span>
+      </label>
+      <div class="cr-chips" id="dept-chips" role="group" aria-label="Filter by department"></div>
+      <div class="cr-toolbar-end">
+        <label class="cr-toggle"><input type="checkbox" id="open-only"><span class="cr-switch"></span>Seats available</label>
+        <select class="cr-sort" id="sort" aria-label="Sort sections">
+          <option value="code">Sort: Course code</option>
+          <option value="seats">Sort: Most seats left</option>
+          <option value="hot">Sort: Filling fastest</option>
+          <option value="credits">Sort: Credits</option>
+        </select>
+      </div>
+    </div>
+  </div>
 </div>
-<div class="row g-3" id="sections"></div>
+
+<div class="container">
+  <div class="cr-results-head">
+    <h2>All sections</h2>
+    <span class="cr-results-meta" id="results-meta"></span>
+  </div>
+  <div class="cr-grid cr-animate" id="sections">
+    {% for _ in range(6) %}<div class="cr-skeleton"></div>{% endfor %}
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  function seatColor(pct) {
-    return pct >= 100 ? "bg-danger" : pct >= 67 ? "bg-warning" : "bg-success";
+  const DEPT_COLORS = ["#4651f5", "#0ea58a", "#a855f7", "#f97316", "#ec4899"];
+  const DAY_NAMES = { MON: "Mon", TUE: "Tue", WED: "Wed", THU: "Thu", FRI: "Fri", SAT: "Sat" };
+  const ICON_PERSON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>';
+  const ICON_PIN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+  const ICON_CHECK = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  const ICON_CLOCK = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+
+  const state = {
+    sections: [], timetable: [], enrolled: new Set(), waitlist: new Map(),
+    dept: "all", query: "", openOnly: false, sort: "code",
+    signature: "", previousEnrolled: new Map(),
+  };
+
+  const deptOf = (s) => s.course_code.replace(/\d.*$/, "");
+  const departments = () => [...new Set(state.sections.map(deptOf))].sort();
+  const deptColor = (dept) => DEPT_COLORS[departments().indexOf(dept) % DEPT_COLORS.length];
+
+  // Same thresholds as before: green below 67 %, amber up to full, red when full.
+  function tone(s) {
+    return s.fill_pct >= 100 ? "full" : s.fill_pct >= 67 ? "warn" : "ok";
   }
 
-  function sectionCard(s) {
-    const pct = Math.min(s.fill_pct, 100);
-    const seatsText = s.seats_left < 0
-      ? `<span class="text-danger fw-semibold">OVERBOOKED ${s.enrolled}/${s.capacity}</span>`
-      : `${s.enrolled}/${s.capacity} enrolled · ${s.seats_left} left`;
+  function seatBar(s) {
+    if (s.capacity > 16) {
+      return `<div class="cr-seatbar-solid tone-${tone(s)}"><div style="width: ${Math.min(s.fill_pct, 100)}%"></div></div>`;
+    }
+    const segments = [];
+    for (let i = 0; i < Math.max(s.capacity, s.enrolled); i++) {
+      const kind = i >= s.capacity ? "over" : i < s.enrolled ? "taken" : "";
+      segments.push(`<span class="cr-seg ${kind}"></span>`);
+    }
+    return `<div class="cr-seatbar tone-${tone(s)}" role="img"
+      aria-label="${s.enrolled} of ${s.capacity} seats taken">${segments.join("")}</div>`;
+  }
+
+  function seatText(s) {
+    const waiting = s.waitlist_len ? `<span class="cr-wait">${s.waitlist_len} on waitlist</span>` : "<span></span>";
+    if (s.seats_left < 0) {
+      return `<div class="cr-seat-text"><span class="is-over"><strong>Overbooked</strong> · ${s.enrolled} in ${s.capacity} seats</span>${waiting}</div>`;
+    }
+    if (s.seats_left === 0) {
+      return `<div class="cr-seat-text"><span><strong>Full</strong> · ${s.enrolled}/${s.capacity}</span>${waiting}</div>`;
+    }
+    return `<div class="cr-seat-text"><span><strong>${s.seats_left}</strong> of ${s.capacity} seats left</span>${waiting}</div>`;
+  }
+
+  function tags(s) {
+    let html = "";
+    if (s.seats_left < 0) html += `<span class="cr-tag cr-tag-over">Overbooked</span>`;
+    else if (s.seats_left === 0) html += `<span class="cr-tag cr-tag-full">Full</span>`;
+    else if (s.fill_pct >= 75) html += `<span class="cr-tag cr-tag-hot">🔥 Filling fast</span>`;
+    return html + `<span class="cr-tag cr-tag-credits">${s.credits} cr</span>`;
+  }
+
+  function actions(s) {
+    const id = s.section_id;
+    if (state.enrolled.has(id)) {
+      return `<span class="cr-pill cr-pill-ok">${ICON_CHECK} Enrolled</span>
+        <button class="cr-btn cr-btn-ghost" data-action="drop" data-section="${id}">Drop</button>`;
+    }
+    if (state.waitlist.has(id)) {
+      return `<span class="cr-pill cr-pill-warn">${ICON_CLOCK} Waitlist #${state.waitlist.get(id)}</span>
+        <button class="cr-btn cr-btn-ghost" data-action="drop" data-section="${id}">Leave</button>`;
+    }
+    if (s.seats_left <= 0) {
+      return `<button class="cr-btn cr-btn-dark cr-btn-block" data-action="register" data-section="${id}">Join waitlist</button>`;
+    }
+    return `<button class="cr-btn cr-btn-primary cr-btn-block" data-action="register" data-section="${id}">Register</button>`;
+  }
+
+  function sectionCard(s, index) {
+    const classes = ["cr-card"];
+    if (state.enrolled.has(s.section_id)) classes.push("is-enrolled");
+    if (state.waitlist.has(s.section_id)) classes.push("is-waitlisted");
+    const previous = state.previousEnrolled.get(s.section_id);
+    if (previous !== undefined && previous !== s.enrolled) classes.push("cr-flash");
     return `
-      <div class="col-sm-6 col-lg-4">
-        <div class="card h-100 shadow-sm">
-          <div class="card-body d-flex flex-column">
-            <div class="d-flex justify-content-between">
-              <h2 class="h6 mb-1">${s.course_code}-${s.section_code}</h2>
-              <span class="badge text-bg-light">${s.credits} cr</span>
-            </div>
-            <div class="mb-1">${s.course_title}</div>
-            <div class="text-body-secondary small mb-3">${s.instructor_name} · ${s.room}</div>
-            <div class="progress mb-1" role="progressbar" aria-label="Seats filled" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
-              <div class="progress-bar ${seatColor(s.fill_pct)}" style="width: ${pct}%"></div>
-            </div>
-            <div class="small mb-3">${seatsText}${s.waitlist_len ? ` · ${s.waitlist_len} waiting` : ""}</div>
-            <button class="btn btn-primary btn-sm mt-auto" data-section="${s.section_id}">Register</button>
-          </div>
+      <article class="${classes.join(" ")}" style="--dept: ${deptColor(deptOf(s))}; animation-delay: ${Math.min(index, 12) * 25}ms">
+        <div class="cr-card-top">
+          <span class="cr-code">${esc(s.course_code)}<span class="cr-code-sec">${esc(s.section_code)}</span></span>
+          <span class="cr-tags">${tags(s)}</span>
         </div>
-      </div>`;
+        <h3 class="cr-title">${esc(s.course_title)}</h3>
+        <div class="cr-meta"><span>${ICON_PERSON}${esc(s.instructor_name)}</span><span>${ICON_PIN}${esc(s.room)}</span></div>
+        ${seatBar(s)}
+        ${seatText(s)}
+        <div class="cr-card-foot">${actions(s)}</div>
+      </article>`;
+  }
+
+  function visibleSections() {
+    const q = state.query.trim().toLowerCase();
+    const list = state.sections.filter((s) =>
+      (state.dept === "all" || deptOf(s) === state.dept) &&
+      (!state.openOnly || s.seats_left > 0) &&
+      (!q || [s.course_code + "-" + s.section_code, s.course_title, s.instructor_name, s.room]
+        .some((field) => field.toLowerCase().includes(q))));
+    const byCode = (a, b) => (a.course_code + a.section_code).localeCompare(b.course_code + b.section_code);
+    const sorts = {
+      code: byCode,
+      seats: (a, b) => b.seats_left - a.seats_left || byCode(a, b),
+      hot: (a, b) => b.fill_pct - a.fill_pct || byCode(a, b),
+      credits: (a, b) => b.credits - a.credits || byCode(a, b),
+    };
+    return list.sort(sorts[state.sort]);
+  }
+
+  function renderStats() {
+    const total = state.sections.length;
+    const open = state.sections.filter((s) => s.seats_left > 0).length;
+    const seats = state.sections.reduce((sum, s) => sum + Math.max(s.seats_left, 0), 0);
+    const waiting = state.sections.reduce((sum, s) => sum + s.waitlist_len, 0);
+    const capacity = state.sections.reduce((sum, s) => sum + s.capacity, 0);
+    const enrolled = state.sections.reduce((sum, s) => sum + s.enrolled, 0);
+    document.getElementById("stat-open").innerHTML = `${open}<small>/${total}</small>`;
+    document.getElementById("stat-seats").textContent = seats;
+    document.getElementById("stat-waiting").textContent = waiting;
+    document.getElementById("stat-fill").innerHTML = `${capacity ? Math.round((enrolled / capacity) * 100) : 0}<small>%</small>`;
+  }
+
+  function renderMe() {
+    const student = studentById(currentStudent());
+    if (!student) return;
+    document.getElementById("me-avatar").textContent = initials(student.name);
+    document.getElementById("me-name").textContent = student.name;
+    document.getElementById("me-dept").textContent = student.dept_name;
+
+    const credits = state.sections
+      .filter((s) => state.enrolled.has(s.section_id))
+      .reduce((sum, s) => sum + s.credits, 0);
+    document.getElementById("me-credits").textContent = credits;
+    document.getElementById("me-max").textContent = student.max_credits;
+    document.getElementById("me-credit-fill").style.width = `${Math.min((credits / student.max_credits) * 100, 100)}%`;
+
+    // One row per enrolled section, with its meeting days and times from the timetable.
+    const meetings = new Map();
+    for (const row of state.timetable) {
+      const entry = meetings.get(row.section_id) || { label: `${row.course_code}-${row.section_code}`, days: [], time: `${row.start_time}–${row.end_time}` };
+      entry.days.push(DAY_NAMES[row.day] || row.day);
+      meetings.set(row.section_id, entry);
+    }
+    const rows = [...meetings.values()].map((m) =>
+      `<div class="cr-me-item"><span class="mono">${esc(m.label)}</span><span class="cr-me-when">${esc(m.days.join(" · "))} ${esc(m.time)}</span></div>`);
+    for (const s of state.sections) {
+      if (state.waitlist.has(s.section_id)) {
+        rows.push(`<div class="cr-me-item"><span class="mono">${esc(s.course_code)}-${esc(s.section_code)}</span>
+          <span class="cr-me-tag">Waitlist #${state.waitlist.get(s.section_id)}</span></div>`);
+      }
+    }
+    document.getElementById("me-list").innerHTML = rows.length
+      ? rows.join("")
+      : `<div class="cr-me-empty">No courses yet. Pick a section below to get started.</div>`;
+  }
+
+  function renderChips() {
+    const counts = {};
+    for (const s of state.sections) counts[deptOf(s)] = (counts[deptOf(s)] || 0) + 1;
+    const chip = (value, label, count, color) =>
+      `<button type="button" class="cr-chip ${state.dept === value ? "active" : ""}" data-dept="${esc(value)}">
+        ${color ? `<span class="cr-chip-dot" style="background: ${color}"></span>` : ""}${esc(label)}
+        <span class="cr-chip-count">${count}</span></button>`;
+    document.getElementById("dept-chips").innerHTML =
+      chip("all", "All", state.sections.length) +
+      departments().map((d) => chip(d, d, counts[d], deptColor(d))).join("");
+  }
+
+  function renderGrid() {
+    const list = visibleSections();
+    document.getElementById("results-meta").textContent =
+      `Showing ${list.length} of ${state.sections.length} sections`;
+    document.getElementById("sections").innerHTML = list.length
+      ? list.map(sectionCard).join("")
+      : `<div class="cr-empty"><div class="cr-empty-icon">🔍</div><h3>No sections match</h3>
+          <p>Try a different search or clear the filters.</p></div>`;
+  }
+
+  function render() {
+    renderStats();
+    renderMe();
+    renderChips();
+    renderGrid();
+    state.previousEnrolled = new Map(state.sections.map((s) => [s.section_id, s.enrolled]));
+    // Cards rise in on the first load only, not on every refresh.
+    setTimeout(() => document.getElementById("sections").classList.remove("cr-animate"), 800);
+  }
+
+  function setLive(ok) {
+    document.getElementById("live-dot").classList.toggle("is-stale", !ok);
+    document.getElementById("live-label").textContent = ok ? "Live · seats refresh every 2 s" : "Reconnecting to MySQL…";
   }
 
   async function loadSections() {
-    const sections = await api("/api/sections");
-    document.getElementById("sections").innerHTML = sections.map(sectionCard).join("");
+    const studentId = currentStudent();
+    try {
+      const [sections, timetable, waitlist] = await Promise.all([
+        api("/api/sections"),
+        api(`/api/students/${studentId}/timetable`),
+        api(`/api/students/${studentId}/waitlist`),
+      ]);
+      setLive(true);
+      if (studentId !== currentStudent()) return;   // the student changed while this was loading
+      const signature = JSON.stringify([studentId, sections, timetable, waitlist]);
+      if (signature === state.signature) return;    // nothing changed: keep the DOM (and hover) as is
+      state.signature = signature;
+      state.sections = sections;
+      state.timetable = timetable;
+      state.enrolled = new Set(timetable.map((row) => row.section_id));
+      state.waitlist = new Map(waitlist.map((row) => [row.section_id, row.position]));
+      render();
+    } catch (err) {
+      setLive(false);
+    }
   }
 
+  // Register / drop. Drop asks for a second click so a stray tap can't give up a seat.
   document.getElementById("sections").addEventListener("click", async (e) => {
-    const button = e.target.closest("button[data-section]");
+    const button = e.target.closest("button[data-action]");
     if (!button) return;
+    const sectionId = Number(button.dataset.section);
+
+    if (button.dataset.action === "drop" && !button.classList.contains("is-confirming")) {
+      button.classList.add("is-confirming");
+      button.dataset.label = button.textContent;
+      button.textContent = "Confirm?";
+      setTimeout(() => {
+        button.classList.remove("is-confirming");
+        button.textContent = button.dataset.label;
+      }, 3000);
+      return;
+    }
+
+    button.disabled = true;
+    button.innerHTML = `<span class="cr-spinner"></span>`;
     try {
-      const result = await api("/api/register", {
-        method: "POST",
-        body: { student_id: currentStudent(), section_id: Number(button.dataset.section) },
-      });
-      const kind = { ENROLLED: "success", WAITLISTED: "warning", REJECTED: "danger" }[result.status];
-      toast(result.msg, kind);
+      if (button.dataset.action === "drop") {
+        await api("/api/drop", { method: "POST", body: { student_id: currentStudent(), section_id: sectionId } });
+        const s = state.sections.find((x) => x.section_id === sectionId);
+        const label = `${s.course_code}-${s.section_code}`;
+        toast(state.waitlist.has(sectionId) ? `Left the waitlist for ${label}.` : `Dropped ${label}.`, "info");
+      } else {
+        const result = await api("/api/register", {
+          method: "POST",
+          body: { student_id: currentStudent(), section_id: sectionId },
+        });
+        const kind = { ENROLLED: "success", WAITLISTED: "warning", REJECTED: "danger" }[result.status];
+        toast(result.msg, kind);
+      }
     } catch (err) {
       toast(err.message, "danger");
     }
+    state.signature = "";   // force a re-render so the button comes back even if nothing changed
     loadSections();
   });
 
-  loadSections();
-  setInterval(loadSections, 2000);
+  document.getElementById("dept-chips").addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-dept]");
+    if (!chip) return;
+    state.dept = chip.dataset.dept;
+    renderChips();
+    renderGrid();
+  });
+  document.getElementById("search").addEventListener("input", (e) => { state.query = e.target.value; renderGrid(); });
+  document.getElementById("open-only").addEventListener("change", (e) => { state.openOnly = e.target.checked; renderGrid(); });
+  document.getElementById("sort").addEventListener("change", (e) => { state.sort = e.target.value; renderGrid(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+      e.preventDefault();
+      document.getElementById("search").focus();
+    }
+  });
+  document.addEventListener("student-changed", () => {
+    state.signature = "";
+    state.previousEnrolled = new Map();
+    loadSections();
+  });
+
+  studentsReady
+    .then(() => {
+      loadSections();
+      setInterval(loadSections, 2000);
+    })
+    .catch((err) => toast(err.message, "danger"));
 </script>
 {% endblock %}
